@@ -1,28 +1,68 @@
 #include <gsl/gsl_matrix.h>
-#include <stdio.h>
+#include <stdlib.h>
+
+#include "DArray.h"
 
 int main()
 {
-    gsl_vector *vector = gsl_vector_alloc(3);
-    FILE *file;
-    
-    file = fopen("C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\t.txt", "r");
+    PDynamicArray array = CreateArray(2);
+    Add(array, (void *)1);
+    Add(array, (void *)2);
+    Add(array, (void *)3);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
+    Add(array, (void *)4);
 
-    // double v[] = {1, 1, 1};
-    // vector = gsl_vector_view_array(v, 3).vector;
-    // vector.size = 3;
-    printf("%d", gsl_vector_fscanf(file, vector));
-    gsl_vector_fprintf(stdout, vector, "%f");
-    
-    fclose(file);
+
+    for (int i = 1; i < array->nCurSize; i++)
+    {
+        printf("%d ", array->data[i]);
+    }
+
+    printf("\nSize: %d", array->nCurSize);
+    printf("\nSize: %d", array->nMaxSize);
+    return 0;
 }
 
-void *parceVerteces(FILE *stream)
-{
+// void *parceVerteces(FILE *stream)
+// {
     
-}
+// }
 
-void *parcePolygons(FILE *stream)
-{
+// void *parcePolygons(FILE *stream)
+// {
 
-}
+// }

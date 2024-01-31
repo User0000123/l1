@@ -6,9 +6,9 @@ PDynamicArray CreateArray(int initialSize)
 {
     PDynamicArray array = NULL;
 
-    if (initialSize < 0)
+    if (initialSize <= 1)
     {
-        printf("Initial size is less than 0.\n");
+        printf("Initial size is less than 2.\n");
         return NULL;
     }
 
@@ -26,7 +26,7 @@ PDynamicArray CreateArray(int initialSize)
         return NULL;
     }
 
-    array->nCurSize = 0;
+    array->nCurSize = 1;
     array->nMaxSize = initialSize;
 
     return array;
@@ -34,7 +34,55 @@ PDynamicArray CreateArray(int initialSize)
 
 void CheckCapacity(PDynamicArray array)
 {
-    if (array->nCurSize == array->nMaxSize)
+    if (array == NULL)
+    {
+        return;
+    }
+
+    if (array->nCurSize + 1 >= array->nMaxSize)
+    {
+        array->nMaxSize += array->nMaxSize / 2;
+        array->nMaxSize++;
+        array->data = realloc(array->data, sizeof(void *) * array->nMaxSize);        
+    }
 }
-void            TrimToSize(PDynamicArray array);             
-int             DestroyArray(PDynamicArray array);
+
+void Add(PDynamicArray array, void* data)
+{
+    if (array == NULL)
+    {
+        return;
+    }
+
+    CheckCapacity(array);
+
+    array->data[array->nCurSize++] = data;
+}
+
+
+void TrimToSize(PDynamicArray array)
+{
+    if (array == NULL)
+    {
+        return;
+    }
+
+    array->data = realloc(array->data, sizeof(void *) * array->nCurSize);
+    array->nMaxSize = array->nCurSize;
+}       
+
+int DestroyArray(PDynamicArray array)
+{
+    if (array == NULL)
+    {
+        return 1;
+    }
+
+    for (long i = 0; i < array->nCurSize; i++)
+    {
+        free(array->data[i]);
+    }
+
+    free(array->data);
+    return 0;
+}

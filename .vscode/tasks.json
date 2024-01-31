@@ -11,6 +11,7 @@
                 // "${fileDirname}\\Model.c",
                 // "${fileDirname}\\DoubleBuffering.c",
                 "${fileDirname}\\Parser.c",
+                "${fileDirname}\\DArray.c",
                 "-llibgsl",
                 // "-lgdi32",
                 "-o",

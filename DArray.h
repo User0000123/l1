@@ -3,13 +3,13 @@
 
 typedef struct 
 {
-    void* data;
+    void** data;
     long nCurSize;
     long nMaxSize;
 } TDynamicArray, *PDynamicArray;
 
 PDynamicArray   CreateArray(int initialSize);
-void            CheckCapacity(PDynamicArray array);
+void            Add(PDynamicArray array, void* data);
 void            TrimToSize(PDynamicArray array);             
 int             DestroyArray(PDynamicArray array);
 
