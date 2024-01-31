@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "modelresources.h": "c",
+        "windows.h": "c",
+        "shellscalingapi.h": "c",
+        "doublebuffering.h": "c"
+    }
+}
