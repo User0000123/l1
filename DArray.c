@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
 #include "DArray.h"
 
 PDynamicArray CreateArray(int initialSize)
@@ -19,7 +21,7 @@ PDynamicArray CreateArray(int initialSize)
         return NULL;
     }
 
-    array->data = malloc(sizeof(void *) * initialSize);
+    array->data = calloc(initialSize, sizeof(void *));
     if (array->data == NULL)
     {
         printf("There is insufficient memory available.\n");
@@ -39,11 +41,11 @@ void CheckCapacity(PDynamicArray array)
         return;
     }
 
-    if (array->nCurSize + 1 >= array->nMaxSize)
+    if (array->nCurSize + 1 > array->nMaxSize)
     {
         array->nMaxSize += array->nMaxSize / 2;
         array->nMaxSize++;
-        array->data = realloc(array->data, sizeof(void *) * array->nMaxSize);        
+        array->data = realloc(array->data, sizeof(void *) * array->nMaxSize);
     }
 }
 
