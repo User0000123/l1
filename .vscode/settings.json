@@ -6,6 +6,8 @@
         "doublebuffering.h": "c",
         "crtdbg.h": "c",
         "gsl_matrix.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "gsl_vector.h": "c",
+        "matrixtransformations.h": "c"
     }
 }

@@ -1,6 +1,7 @@
 #ifndef __PARSER_H__
 #define __PARSER_H__
 
+#include <stdio.h>
 #include "DArray.h"
 
 #define PARSER_MAX_STRING_LENGTH        100
@@ -19,5 +20,8 @@ typedef struct
     PDynamicArray fvn;
     PDynamicArray l;
 } ObjFile;
+
+ObjFile *parseOBJ(FILE *stream);
+void DestroyObjFileInfo(ObjFile *pObjFile);
 
 #endif

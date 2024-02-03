@@ -1,4 +1,4 @@
-#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_vector.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -111,8 +111,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     
     while (token != NULL)
     {
-        components[index++] = token;
-        // printf("TOKEN:%s \n", token);
+        components[index++] = token;        
 
         token = strtok(NULL, PARSER_COMPONENTS_DELIMETER);
     } 
@@ -189,7 +188,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     free(components);
 }
 
-ObjFile *parceOBJ(FILE *stream)
+ObjFile *parseOBJ(FILE *stream)
 {
     ObjFile *pObjFile = malloc(sizeof(ObjFile));
     InitializeObjFileInfo(pObjFile);
@@ -228,16 +227,16 @@ ObjFile *parceOBJ(FILE *stream)
     return pObjFile;   
 }
 
-int main()
-{
-    FILE *objFile;
-    char* fileName = "C:\\Users\\Aleksej\\Downloads\\model\\model.obj";
-    // char* fileName = "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\t.txt";
+// int main()
+// {
+//     FILE *objFile;
+//     char* fileName = "C:\\Users\\Aleksej\\Downloads\\model\\model.obj";
+//     // char* fileName = "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\t.txt";
 
-    objFile = fopen(fileName, "r");
+//     objFile = fopen(fileName, "r");
 
-    DestroyObjFileInfo(parceOBJ(objFile));
+//     DestroyObjFileInfo(parseOBJ(objFile));
 
-    fclose(objFile);
-    return 0;
-}
+//     fclose(objFile);
+//     return 0;
+// }
