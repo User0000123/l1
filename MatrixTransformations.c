@@ -1,6 +1,8 @@
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_blas.h>
 
+#include <math.h>
+
 #include "MatrixTransformations.h"
 
 double motionMatrix[] = 
@@ -59,12 +61,6 @@ void InitializeMatrixTrans()
     mYRotate = gsl_matrix_view_array(yRotateMatrix, 4, 4).matrix;
     mZRotate = gsl_matrix_view_array(zRotateMatrix, 4, 4).matrix;
     result = gsl_vector_calloc(4);
-
-    // gsl_matrix_transpose(&mMotion);
-    // gsl_matrix_transpose(&mScale);
-    // gsl_matrix_transpose(&mXRotate);
-    // gsl_matrix_transpose(&mYRotate);
-    // gsl_matrix_transpose(&mZRotate);
 }
 
 void FinalizeMatrixTrans()
@@ -90,6 +86,22 @@ void ApplyMatrix(gsl_vector *target, MT_TYPE mtType, double x, double y, double 
             scaleMatrix[10] = z;
 
             gsl_blas_dgemv(CblasNoTrans, 1.0, &mScale, target, 0, result);
+            break;
+        case MT_X_ROTATE:
+            xRotateMatrix[5] = cos(angle);
+            xRotateMatrix[6] = -sin(angle);
+            xRotateMatrix[9] = sin(angle);
+            xRotateMatrix[10] = cos(angle);
+
+            gsl_blas_dgemv(CblasNoTrans, 1.0, &mXRotate, target, 0, result);
+            break;
+        case MT_Y_ROTATE:
+            yRotateMatrix[0] = cos(angle);
+            yRotateMatrix[2] = sin(angle);
+            yRotateMatrix[8] = -sin(angle);
+            yRotateMatrix[10] = cos(angle);
+
+            gsl_blas_dgemv(CblasNoTrans, 1.0, &mYRotate, target, 0, result);
             break;
     }
 

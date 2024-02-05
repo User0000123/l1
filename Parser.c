@@ -99,9 +99,9 @@ void parcePolygon(ObjFile *pObjFile, char *string)
 {
     int dimensionality = getTokensCount(string, PARSER_COMPONENTS_DELIMETER);
     _CRT_DOUBLE dbval;
-    gsl_vector *pVectorVerteces = gsl_vector_calloc(dimensionality);
-    gsl_vector *pVectorTextures = gsl_vector_calloc(dimensionality);
-    gsl_vector *pVectorNormals = gsl_vector_calloc(dimensionality);
+    gsl_vector_int *pVectorVerteces = gsl_vector_int_calloc(dimensionality);
+    gsl_vector_int *pVectorTextures = gsl_vector_int_calloc(dimensionality);
+    gsl_vector_int *pVectorNormals = gsl_vector_int_calloc(dimensionality);
 
     int index = 0;
     char *token;
@@ -121,36 +121,33 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     int isVnExists = 0;
 
     token = strtok(components[0], PARSER_COORDINATES_DELIMETER);
-    _atodbl(&dbval, token);
-    pVectorVerteces->data[0] = dbval.x;
+    pVectorVerteces->data[0] = atoi(token);
 
     token = strtok(NULL, PARSER_COORDINATES_DELIMETER);
     isVtExists = strlen(token) != 0;
 
     if (isVtExists)
     {
-        _atodbl(&dbval, token);
-        pVectorTextures->data[0] = dbval.x;
+        
+        pVectorTextures->data[0] = atoi(token);
     } 
     
     if (token = strtok(NULL, PARSER_COORDINATES_DELIMETER))
     {
-        _atodbl(&dbval, token);
-        pVectorNormals->data[0] = dbval.x;
+        
+        pVectorNormals->data[0] = atoi(token);
         isVnExists = 1;
     }
 
     for (int i = 1; i < dimensionality; i++)
     {
         token = strtok(components[i], PARSER_COORDINATES_DELIMETER);
-        _atodbl(&dbval, token);
-        pVectorVerteces->data[i] = dbval.x;
+        pVectorVerteces->data[i] = atoi(token);
 
         if (isVtExists)
         {
             token = strtok(NULL, PARSER_COORDINATES_DELIMETER);
-            _atodbl(&dbval, token);
-            pVectorTextures->data[i] = dbval.x;
+            pVectorTextures->data[i] = atoi(token);
         } 
         else
         {
@@ -160,8 +157,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
         if (isVnExists)
         {
             token = strtok(NULL, PARSER_COORDINATES_DELIMETER);
-            _atodbl(&dbval, token);
-            pVectorNormals->data[i] = dbval.x;
+            pVectorNormals->data[i] = atoi(token);;
         }
     }
 
@@ -173,7 +169,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     }
     else
     {
-        gsl_vector_free(pVectorTextures);
+        gsl_vector_int_free(pVectorTextures);
     }
 
     if (isVnExists)
@@ -182,7 +178,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     }
     else
     {
-        gsl_vector_free(pVectorNormals);
+        gsl_vector_int_free(pVectorNormals);
     }
 
     free(components);

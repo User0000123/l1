@@ -8,6 +8,9 @@
         "gsl_matrix.h": "c",
         "stdlib.h": "c",
         "gsl_vector.h": "c",
-        "matrixtransformations.h": "c"
+        "matrixtransformations.h": "c",
+        "modelsettings.h": "c",
+        "model.h": "c",
+        "darray.h": "c"
     }
 }
