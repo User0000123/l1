@@ -12,7 +12,7 @@ void InitializeBuffer(HWND hwnd, HDC* hdcBack, HBITMAP* hbmBack, RECT *rcClient)
     *hbmBack = CreateCompatibleBitmap(hdcWindow, rcClient->right - rcClient->left, rcClient->bottom - rcClient->top);
     SaveDC(*hdcBack);
     SelectObject(*hdcBack, *hbmBack);
-
+    
     ReleaseDC(hwnd, hdcWindow);
 }
 

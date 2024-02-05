@@ -73,17 +73,24 @@ void TrimToSize(PDynamicArray array)
     array->nMaxSize = array->nCurSize;
 }       
 
-int DestroyArray(PDynamicArray array)
+void CleanArray(PDynamicArray array)
 {
     if (array == NULL)
     {
-        return 1;
+        return;
     }
 
     for (long i = 0; i < array->nCurSize; i++)
     {
         free(array->data[i]);
     }
+
+    array->nCurSize = 1;
+}
+
+int DestroyArray(PDynamicArray array)
+{
+    CleanArray(array);
 
     free(array->data);
     return 0;
