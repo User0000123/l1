@@ -98,7 +98,6 @@ int getTokensCount(char *string, char *delimeter)
 void parcePolygon(ObjFile *pObjFile, char *string)
 {
     int dimensionality = getTokensCount(string, PARSER_COMPONENTS_DELIMETER);
-    _CRT_DOUBLE dbval;
     gsl_vector_int *pVectorVerteces = gsl_vector_int_calloc(dimensionality);
     gsl_vector_int *pVectorTextures = gsl_vector_int_calloc(dimensionality);
     gsl_vector_int *pVectorNormals = gsl_vector_int_calloc(dimensionality);
@@ -124,7 +123,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     pVectorVerteces->data[0] = atoi(token);
 
     token = strtok(NULL, PARSER_COORDINATES_DELIMETER);
-    isVtExists = strlen(token) != 0;
+    isVtExists = strnlen_s(token, PARSER_MAX_STRING_LENGTH) != 0;
 
     if (isVtExists)
     {

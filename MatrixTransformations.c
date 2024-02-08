@@ -52,6 +52,7 @@ gsl_matrix mYRotate;
 gsl_matrix mZRotate;
 
 gsl_vector *result;
+gsl_matrix *resultM;
 
 void InitializeMatrixTrans()
 {
@@ -61,11 +62,13 @@ void InitializeMatrixTrans()
     mYRotate = gsl_matrix_view_array(yRotateMatrix, 4, 4).matrix;
     mZRotate = gsl_matrix_view_array(zRotateMatrix, 4, 4).matrix;
     result = gsl_vector_calloc(4);
+    resultM = gsl_matrix_alloc(4,4);
 }
 
 void FinalizeMatrixTrans()
 {
     gsl_vector_free(result);
+    gsl_matrix_free(resultM);
 }
 
 void ApplyMatrix(gsl_vector *target, MT_TYPE mtType, double x, double y, double z, double angle)

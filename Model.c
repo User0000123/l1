@@ -1,54 +1,63 @@
 #define UNICODE
 #define _UNICODE
 
-#include <windowsx.h>
-#include <tchar.h>
-#include <stdio.h>
-#include <math.h>
-#include <time.h>
 #include <gsl/gsl_blas.h>
+#include <gsl/gsl_math.h>
+#include <gsl/gsl_vector.h>
+#include <math.h>
+#include <stdio.h>
+#include <tchar.h>
+#include <time.h>
+#include <windowsx.h>
 
 #include "Model.h"
-#include "ModelResources.h"
-#include "ModelSettings.h"
 #include "MatrixTransformations.h"
 #include "Parser.h"
-#include "ThreadPool.h"
 
 #include "DoubleBuffering.h"
+#include "FpsUtility.h"
+
+#define APPLICATION_NAME    _TEXT("3D Model")
 
 #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
-#define TIMER_ID_15MSEC     1
+
+#define BACKGROUND_BRUSH    BLACK_BRUSH
 #define COLOR_IMAGE         RGB(255, 255, 255)
-#define TASKS               100
+
+#define TIMER_REPAINT_ID    1
+#define TIMER_REPAINT_MS    15
+#define WHEEL_DELTA_SCALE   0.1
+#define MOVEMENT_SPEED      3
+
+   /* Perspective projection */
+#define CAMERA_VIEW_WIDTH   2
+#define CAMERA_VIEW_HEIGHT  2
+#define Z_NEAR              1
+#define Z_FAR               10
 
     /* Graphic window */
 HWND hwndMainWindow;
+RECT rcClient;
+WINDOWPLACEMENT g_wpPrev = { sizeof(g_wpPrev) };
+
+    /* Back buffer */
 HDC hdcBack;
 HBITMAP hbmBack;
-RECT rcClient;
-typedef struct {
-    int frames;
-    long lastTime;
-} TUtilFPS;
-TUtilFPS fps;
+
+    /* Screen bitmap */
 BITMAPINFO bmi;
 byte *pBytes;
 BITMAP bmp;
 
-HTHDPOOL hPool;
-HANDLE hTaskExecutedEvent;
-typedef struct {
-    int from;
-    int to;
-    int index;
-} LineStruct;
-LineStruct params[TASKS];
-PDynamicArray drawPoints[TASKS];
+    /* Model info */
+RECT rcModelInfo;
+TCHAR *tcsFpsInfo;
 
     /* .OBJ file */
 FILE *objFile;
 ObjFile *pObjFile;
+
+    /* Model temp vertices */
 gsl_vector **gvWorldVertices;
 gsl_vector **gvPaintVertices;
 gsl_block *gbWorldVertices;
@@ -58,33 +67,101 @@ gsl_block *gbPaintVertices;
 POINT ptMousePrev;
 BOOL isActivated;
 
-double x = 0, y = 0, z = -2, angleY = 0, angleX = 0; 
-
-#define widthScreen 794
-#define widthCV 2
-#define heightCV 2
-#define heightScreen 565
-#define zNear 1
-#define zFar 10
+    /* Camera coordinates */
+gsl_vector *eye;
+gsl_vector *target;
+gsl_vector *up;
+DOUBLE destR =          2;
+DOUBLE angleThetha =    M_PI / 2.0;
+DOUBLE anglePhi =       0;
+byte keys[255];
+gsl_vector *straightViewDirection;
+gsl_vector *sideViewDirection;
 
 double translViewPort[] = 
     {
-        heightScreen / 2.0, 0, 0, widthScreen / 2.0, 
-        0, - heightScreen / 2.0, 0, heightScreen / 2.0,
+        R, 0, 0, R, 
+        0, R, 0, R,
         0, 0, 1, 0,
         0, 0, -1, 0
     };
+
 double translProjection[] = 
     {
-        2.0 * zNear / widthCV, 0, 0, 0, 
-        0, 2.0 * zNear / heightCV, 0, 0,
-        0, 0, zFar / (zNear - zFar), zNear * zFar / (zNear - zFar),
+        2.0 * Z_NEAR / CAMERA_VIEW_WIDTH, 0, 0, 0, 
+        0, 2.0 * Z_NEAR / CAMERA_VIEW_HEIGHT, 0, 0,
+        0, 0, Z_FAR / (Z_NEAR - Z_FAR), Z_NEAR * Z_FAR / (Z_NEAR - Z_FAR),
         0, 0, -1, 0
+    };
+
+double translView[] = 
+    {
+        R, R, R, R, 
+        R, R, R, R,
+        R, R, R, R,
+        0, 0, 0, 1
     };
 
 gsl_matrix matrixViewPort;
 gsl_matrix matrixProjection;
+gsl_matrix matrixView;
 gsl_vector *pResult;
+gsl_vector *xAxis;
+gsl_vector *yAxis;
+gsl_vector *zAxis;
+
+inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *result)
+{
+    result->data[0] = v1->data[1] * v2->data[2] - v1->data[2] * v2->data[1]; 
+    result->data[1] = v1->data[2] * v2->data[0] - v1->data[0] * v2->data[2]; 
+    result->data[2] = v1->data[0] * v2->data[1] - v1->data[1] * v2->data[0]; 
+}
+
+void applyTransformations()
+{
+    memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
+
+    gsl_vector_memcpy(zAxis, eye);
+    gsl_vector_sub(zAxis, target);
+    gsl_vector_scale(zAxis, 1.0 / gsl_blas_dnrm2(zAxis));
+
+    vector_cross_product3(up, zAxis, xAxis);
+    gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis));
+
+    gsl_vector_memcpy(yAxis, up);
+
+    for (int i = 0; i < 3; i++)
+    {
+        translView[i] = xAxis->data[i];
+        translView[4 + i] = yAxis->data[i];
+        translView[8 + i] = zAxis->data[i];
+    }
+
+    gsl_blas_ddot(xAxis, eye, translView + 3);
+    gsl_blas_ddot(yAxis, eye, translView + 7);
+    gsl_blas_ddot(zAxis, eye, translView + 11);
+    for (int i = 0; i < 3; i++)
+    {
+        translView[4*i + 3] *= -1;
+    }
+
+    for (int i = 1; i < pObjFile->v->nCurSize; i++)
+    {
+        gsl_vector *pVector = gvPaintVertices[i];
+        
+        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixView, pVector, 0, pResult);
+        gsl_vector_memcpy(pVector, pResult);
+        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixProjection, pVector, 0, pResult);
+        gsl_vector_memcpy(pVector, pResult);
+        for (int j = 0; j < 3; j++)
+        {
+            pVector->data[j] /= pVector->data[3];
+        }
+        pVector->data[3] /= pVector->data[3];
+        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
+        gsl_vector_memcpy(pVector, pResult);
+    }
+}
 
 void InitializeResources()
 {
@@ -92,17 +169,26 @@ void InitializeResources()
     objFile = fopen(PTH_OBJ_FILE, "r");
     pObjFile = parseOBJ(objFile);
 
-    memset(&bmi, 0, sizeof(BITMAPINFO));
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = widthScreen;
-    bmi.bmiHeader.biHeight = -heightScreen; // Negative height to ensure top-down drawing
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32; // 32-bit color depth
-    bmi.bmiHeader.biCompression = BI_RGB;
-
     matrixViewPort = gsl_matrix_view_array(translViewPort, 4, 4).matrix;
     matrixProjection = gsl_matrix_view_array(translProjection, 4, 4).matrix;
+    matrixView = gsl_matrix_view_array(translView, 4, 4).matrix;
+
     pResult = gsl_vector_calloc(4);
+    xAxis = gsl_vector_calloc(4);
+    yAxis = gsl_vector_calloc(4);
+    zAxis = gsl_vector_calloc(4);
+
+    eye = gsl_vector_calloc(4);
+    gsl_vector_set(eye, 2, destR);
+
+    up = gsl_vector_calloc(4);
+    gsl_vector_set_basis(up, 1);
+    target = gsl_vector_calloc(4);
+
+    straightViewDirection = gsl_vector_alloc(4);
+    gsl_vector_set_basis(straightViewDirection, 2);
+    sideViewDirection = gsl_vector_alloc(4);
+    gsl_vector_set_basis(sideViewDirection, 0);
     
     gbWorldVertices = gsl_block_alloc(pObjFile->v->nCurSize * 4);
     gbPaintVertices = gsl_block_alloc(pObjFile->v->nCurSize * 4);
@@ -117,53 +203,50 @@ void InitializeResources()
         gsl_vector_memcpy(gvWorldVertices[i], pObjFile->v->data[i]);
     }
     
-    memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
-    for (int i = 1; i < pObjFile->v->nCurSize; i++)
-    {
-        gsl_vector *pVector = gvPaintVertices[i];
-        
-        ApplyMatrix(pVector, MT_MOTION, 0, 0, -2, 0);
-        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixProjection, pVector, 0, pResult);
-        gsl_vector_memcpy(pVector, pResult);
-        for (int j = 0; j < 3; j++)
-        {
-            pVector->data[j] /= pVector->data[3];
-        }
-        pVector->data[3] /= pVector->data[3];
-        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
-        gsl_vector_memcpy(pVector, pResult);
-    }
+    applyTransformations();
 
-    hPool = CreateThreadPool(100, 6);
-    hTaskExecutedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-
-    for (int i = 0; i < TASKS; i++)
-    {
-        drawPoints[i] = CreateArray(100);
-    }
+    tcsFpsInfo = calloc(FPS_OUT_MAX_LENGTH, sizeof(TCHAR));
 }
 
 void FreeAllResources()
 {
-    FinalizeMatrixTrans();
+    free(tcsFpsInfo);
+    free(gvPaintVertices);
+    free(gvWorldVertices);
+
+    gsl_block_free(gbPaintVertices);
+    gsl_block_free(gbWorldVertices);
+
+    free(pResult);
+    free(eye);
+    free(target);
+    free(up);
+    free(xAxis);
+    free(yAxis);
+    free(zAxis);
+    free(straightViewDirection);
+    free(sideViewDirection);
+
+    free(pBytes);
+
     DestroyObjFileInfo(pObjFile);
     fclose(objFile);
+    FinalizeMatrixTrans();
 }
 
-inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2, int index)
+inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2)
 {
     int x1 = (int) gsl_vector_get(pVector1, 0);
     int y1 = (int) gsl_vector_get(pVector1, 1);
     int x2 = (int) gsl_vector_get(pVector2, 0);
     int y2 = (int) gsl_vector_get(pVector2, 1);
 
-    if (x1 < 0 || x2 < 0 || x1 > widthScreen || x2 > widthScreen || y1 < 0 || y2 < 0 || y1 > heightScreen || y2 > heightScreen) return;
+    if (x1 < 0 || x2 < 0 || x1 >= bmp.bmWidth || x2 >= bmp.bmWidth || y1 < 0 || y2 < 0 || y1 >= bmp.bmHeight || y2 >= bmp.bmHeight) return;
 
     int deltaX = abs(x2 - x1);
     int deltaY = abs(y2 - y1);
     int signX = x2 >= x1 ? 1 : -1;
     int signY = y2 >= y1 ? 1 : -1;
-    // POINT *pt = calloc(1, sizeof(POINT));
     int offset;
 
     if (deltaY <= deltaX)
@@ -172,11 +255,6 @@ inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2, i
         int d1 = deltaY << 1;
         int d2 = (deltaY - deltaX) << 1;
 
-        // SetPixel(dc, x1, y1, COLOR_IMAGE);
-        // pt->x = x1;
-        // pt->y = y1;
-        // Add(drawPoints[index], pt);
-        // Ellipse(dc, x1, y1, x1+2, y1+2);
         offset = (y1 * bmp.bmWidth + x1) * 4;
         pBytes[offset + 0] = 255;
         pBytes[offset + 1] = 255;
@@ -194,12 +272,6 @@ inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2, i
                 d += d1;
             }
 
-        // pt = calloc(1, sizeof(POINT));
-        // pt->x = x;
-        // pt->y = y;
-        // Add(drawPoints[index], pt);
-            // SetPixel(dc, x, y, COLOR_IMAGE);
-            // Ellipse(dc, x, y, x+2, y+2);
         offset = (y * bmp.bmWidth + x) * 4;
         pBytes[offset + 0] = 255;
         pBytes[offset + 1] = 255;
@@ -212,16 +284,11 @@ inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2, i
         int d1 = deltaX << 1;
         int d2 = (deltaX - deltaY) << 1;
 
-        // pt = calloc(1, sizeof(POINT));
-        // pt->x = x1;
-        // pt->y = y1;
-        // Add(drawPoints[index], pt);
-        // SetPixel(dc, x1, y1, COLOR_IMAGE);
-        // Ellipse(dc, x1, y1, x1+2, y1+2);
         offset = (y1 * bmp.bmWidth + x1) * 4;
         pBytes[offset + 0] = 255;
         pBytes[offset + 1] = 255;
         pBytes[offset + 2] = 255;
+
         for (int x = x1, y = y1 + signY, i = 1; i <= deltaY; i++, y += signY)
         {
             if (d > 0)
@@ -238,34 +305,94 @@ inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2, i
             pBytes[offset + 0] = 255;
             pBytes[offset + 1] = 255;
             pBytes[offset + 2] = 255;
-            // pt = calloc(1, sizeof(POINT));
-            // pt->x = x;
-            // pt->y = y;
-            // Add(drawPoints[index], pt);
-            // SetPixel(dc, x, y, COLOR_IMAGE);
-            // Ellipse(dc, x, y, x+2, y+2);
         }
     }
 }
- 
-void task(LPVOID params)
-{
-    LineStruct *pS = (LineStruct *) params;
 
-    for (int i = pS->from; i < pS->to; i++)
+void SetFullScreen(HWND hwnd)
+{
+    DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
+    
+    if (dwStyle & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO mi = { sizeof(mi) };
+
+        if (GetWindowPlacement(hwnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hwnd,MONITOR_DEFAULTTOPRIMARY), &mi)) 
+        {
+            SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
+                        SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    } else {
+        SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd, &g_wpPrev);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                    SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+}
+
+void DrawProc(HDC hdc)
+{
+    SaveDC(hdc);
+            
+    FillRect(hdc, &rcClient, GetStockBrush(BACKGROUND_BRUSH));
+
+    GetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
+    
+    for (int i = 1; i < pObjFile->fv->nCurSize; i++)
     {
         gsl_vector_int *pVector = pObjFile->fv->data[i];
 
         for (int j = 0; j < pVector->size - 1; j++)
         {
-            // params[k].j = j;
-            // params[k].pVector = pVector;
-            // SubmitTask(hPool, task, &params[k++]);
-            DrawCustomLine(hdcBack, gvPaintVertices[pVector->data[j]], gvPaintVertices[pVector->data[j + 1]], pS->index); //change vector type to int
+            DrawCustomLine(hdc, gvPaintVertices[pVector->data[j]], gvPaintVertices[pVector->data[j + 1]]); 
         }                
-        DrawCustomLine(hdcBack, gvPaintVertices[pVector->data[0]], gvPaintVertices[pVector->data[pVector->size - 1]], pS->index); //change vector type to int
+        DrawCustomLine(hdc, gvPaintVertices[pVector->data[0]], gvPaintVertices[pVector->data[pVector->size - 1]]);
     }
-    SetEvent(hTaskExecutedEvent);
+
+    SetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
+
+    // FPS counter //////////////////////////////////////
+    SetTextColor(hdc, COLOR_IMAGE);
+    SetBkColor(hdc, TRANSPARENT);
+    DrawText(hdc, tcsFpsInfo, -1, &rcModelInfo, DT_CENTER);
+    /////////////////////////////////////////////////////
+
+    RestoreDC(hdc, -1);
+}
+
+void MoveProc()
+{
+    static long lastTime = 0;
+    double cameraSpeed = (GetTickCount() - lastTime) / 1000.0 * MOVEMENT_SPEED;
+
+    if (keys[0x57])
+    {
+        gsl_vector_set(straightViewDirection, 2, -1 * cameraSpeed);
+        gsl_vector_add(eye,  straightViewDirection);
+    }
+
+    if (keys[0x53])
+    {
+        gsl_vector_set(straightViewDirection, 2, 1 * cameraSpeed);
+        gsl_vector_add(eye,  straightViewDirection);
+    }
+
+    // if (keys[0x41])
+    // {
+    //     gsl_vector_set(sideViewDirection, 0, -1 * cameraSpeed);
+    //     gsl_vector_add(eye, sideViewDirection);
+    //     gsl_vector_add(target, sideViewDirection);
+    // }
+
+    // if (keys[0x44])
+    // {
+    //     gsl_vector_set(sideViewDirection, 0, 1 * cameraSpeed);
+    //     gsl_vector_add(eye, sideViewDirection);
+    //     gsl_vector_add(target, sideViewDirection);
+    // }
+
+    lastTime = GetTickCount();
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -275,9 +402,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         /* Section for window messages */
         case WM_CREATE:
             InitializeResources();
-            SetTimer(hWnd, TIMER_ID_15MSEC, 15, NULL);
+            SetTimer(hWnd, TIMER_REPAINT_ID, TIMER_REPAINT_MS, NULL);
             break;
         case WM_TIMER:
+            MoveProc();
+            applyTransformations();
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         case WM_PAINT:
@@ -285,82 +414,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             PAINTSTRUCT ps;
 
             dc = BeginPaint(hWnd, &ps);
-
-            SaveDC(hdcBack);
             
-            FillRect(hdcBack, &rcClient, GetStockBrush(BLACK_BRUSH));
-            int delta = pObjFile->fv->nCurSize / TASKS;
-
-            GetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
-            params[0].from = 1;
-            params[0].to = delta + 1;
-            params[0].index = 0;
-            SubmitTask(hPool, task, &params[0]);
-
-            for (int i = 1; i < TASKS; i++)
-            {
-                params[i].from = params[i - 1].to;
-                params[i].to = params[i].from + delta;
-                params[i].index = i;
-                SubmitTask(hPool, task, &params[i]);
-                // gsl_vector_int *pVector = pObjFile->fv->data[i];
-
-                // for (int j = 0; j < pVector->size - 1; j++)
-                // {
-                //     // params[k].j = j;
-                //     // params[k].pVector = pVector;
-                //     // SubmitTask(hPool, task, &params[k++]);
-                //     DrawCustomLine(hdcBack, gvPaintVertices[pVector->data[j]], gvPaintVertices[pVector->data[j + 1]]); //change vector type to int
-                // }                
-                // DrawCustomLine(hdcBack, gvPaintVertices[pVector->data[0]], gvPaintVertices[pVector->data[pVector->size - 1]]); //change vector type to int
-            }
-            // FillRect(hdcBack, &rcClient, GetStockBrush(WHITE_BRUSH));
-            // for (int i = 1; i < pObjFile->v->nCurSize; i++)
-            // {
-            //     gsl_vector *pVector = gvPaintVertices[i];
-                
-            //     int x = pVector->data[0];
-            //     int y = pVector->data[1];
-
-            //     Ellipse(hdcBack, x, y, x+2, y+2);
-            // }
-
-            while (GetExecutedTasksCount(hPool) < TASKS)
-            {
-                WaitForSingleObject(hTaskExecutedEvent, INFINITE);
-            }
-            SetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
-            // GetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
-            // for (int i = 0; i < TASKS; i++)
-            // {
-            //     PDynamicArray array = drawPoints[i];
-            //     TrimToSize(array);
-            //     for (int j = 1; j < drawPoints[i]->nCurSize; j++)
-            //     {
-            //         POINT *pt = (POINT *) array->data[j];
-            //         int offset = (pt->y * bmp.bmWidth + pt->x) * 4;
-
-            //         pBytes[offset + 0] = 255;
-            //         pBytes[offset + 1] = 255;
-            //         pBytes[offset + 2] = 255;
-            //     }
-
-            //     CleanArray(array);
-            // }
-            // SetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
-
-            SetExecutedTasksCount(hPool, 0);
-            ResetEvent(hTaskExecutedEvent);
-            RestoreDC(hdcBack, -1);
-
+            DrawProc(hdcBack);        
+            
             BitBlt(dc, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, hdcBack, 0, 0, SRCCOPY);
             EndPaint(hWnd, &ps);
+            
+            fps.frames++;
             break;
         case WM_SIZE:
             FinalizeBuffer(&hdcBack, &hbmBack);
             InitializeBuffer(hWnd, &hdcBack, &hbmBack, &rcClient);
+            
+            rcModelInfo.left = rcClient.left;
+            rcModelInfo.top = rcClient.bottom - 30;
+            rcModelInfo.bottom = rcClient.bottom;
+            rcModelInfo.right = rcClient.left + 80;
+
             GetObject(hbmBack, sizeof(BITMAP), &bmp);
-            pBytes = malloc(4 * (bmp.bmHeight+1) * (bmp.bmWidth+1));
+
+            memset(&bmi, 0, sizeof(bmi));
+            bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            GetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, NULL, &bmi, DIB_RGB_COLORS);
+            bmi.bmiHeader.biCompression = BI_RGB;
+            bmi.bmiHeader.biHeight = -bmp.bmHeight;
+
+            double scaleX = bmp.bmWidth / 2.0;
+            double scaleY = bmp.bmHeight / 2.0;
+
+            translViewPort[0] = scaleY;
+            translViewPort[3] = scaleX;
+            translViewPort[5] = -scaleY;
+            translViewPort[7] = scaleY;
+
+            pBytes = realloc(pBytes, bmi.bmiHeader.biSizeImage);
             break;
         case WM_LBUTTONDOWN: 
             ptMousePrev.x = GET_X_LPARAM(lParam);
@@ -373,68 +460,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case WM_MOUSEMOVE: 
             if (isActivated)
             {
-                int x = GET_X_LPARAM(lParam);
-                int y = GET_Y_LPARAM(lParam);
+                int xMousePos = GET_X_LPARAM(lParam);
+                int yMousePos = GET_Y_LPARAM(lParam);
 
-                angleY += (x - ptMousePrev.x) / 1280.0 * 2 * M_PI;
-                angleX += (y - ptMousePrev.y) / 720.0 * 2 * M_PI;
-
-                ptMousePrev.x = x;
-                ptMousePrev.y = y;
-
-                memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
-                for (int i = 1; i < pObjFile->v->nCurSize; i++)
-                {
-                    gsl_vector *pVector = gvPaintVertices[i];
-                    
-                    ApplyMatrix(pVector, MT_X_ROTATE, 0, 0, 0, angleX);
-                    ApplyMatrix(pVector, MT_Y_ROTATE, 0, 0, 0, angleY);
-                    ApplyMatrix(pVector, MT_MOTION, 0, 0, z, 0);
-                    gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixProjection, pVector, 0, pResult);
-                    gsl_vector_memcpy(pVector, pResult);
-                    for (int j = 0; j < 3; j++)
-                    {
-                        pVector->data[j] /= pVector->data[3];
-                    }
-                    pVector->data[3] /= pVector->data[3];
-                    gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
-                    gsl_vector_memcpy(pVector, pResult);
-                }
+                // angleThetha += (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
+                // anglePhi += (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI;
                 
-                // InvalidateRect(hWnd, NULL, FALSE);
+                ApplyMatrix(eye, MT_Y_ROTATE, 0, 0, 0, (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI);
+
+                ptMousePrev.x = xMousePos;
+                ptMousePrev.y = yMousePos;
             }
             break;
         case WM_MOUSEWHEEL:
-            if (GET_WHEEL_DELTA_WPARAM(wParam) > 0)
-            {
-                z += 0.1;
-            }
-            else
-            {
-                z -= 0.1;
-            }
-            memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
-                for (int i = 1; i < pObjFile->v->nCurSize; i++)
-                {
-                    gsl_vector *pVector = gvPaintVertices[i];
-                    
-                    ApplyMatrix(pVector, MT_X_ROTATE, 0, 0, 0, angleX);
-                    ApplyMatrix(pVector, MT_Y_ROTATE, 0, 0, 0, angleY);
-                    ApplyMatrix(pVector, MT_MOTION, 0, 0, z, 0);
-                    gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixProjection, pVector, 0, pResult);
-                    gsl_vector_memcpy(pVector, pResult);
-                    for (int j = 0; j < 3; j++)
-                    {
-                        pVector->data[j] /= pVector->data[3];
-                    }
-                    pVector->data[3] /= pVector->data[3];
-                    gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
-                    gsl_vector_memcpy(pVector, pResult);
-                }
-                
-                // InvalidateRect(hWnd, NULL, FALSE);
+            // zCamera += WHEEL_DELTA_SCALE * (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? 1 : -1);
+            // destR += WHEEL_DELTA_SCALE * (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? 1 : -1);
+
+            applyTransformations();
             break;
-        case WM_KEYDOWN:
+        case WM_KEYDOWN:    
+            keys[wParam] = 1;
+            break;
+        case WM_KEYUP:
+            keys[wParam] = 0;
+            break;
+        case WM_SYSKEYDOWN:
+            if (wParam == VK_F12 && (lParam & (1 << 29)))
+            {
+                SetFullScreen(hWnd);    
+            }
             break;
         case WM_DESTROY:
             FreeAllResources();
@@ -444,16 +498,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     
     return DefWindowProc(hWnd, message, wParam, lParam);
-}
-
-void fpsLOG(void)
-{
-    if (GetTickCount() - fps.lastTime > 1000) 
-    {
-        printf("FPS = %d\n", fps.frames);
-        fps.frames = 0;
-        fps.lastTime = GetTickCount();
-    }
 }
 
 int WINAPI ModelStart(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
@@ -472,16 +516,18 @@ int WINAPI ModelStart(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
     wcex.hIconSm = wcex.hIcon;
 
     RegisterClassExW(&wcex);
-    hwndMainWindow = CreateWindow(_TEXT("AppClass"), APPLICATION_NAME, WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME), CW_USEDEFAULT, 0, 800, 600, NULL, NULL, hInstance, NULL);
+    hwndMainWindow = CreateWindow(_TEXT("AppClass"), APPLICATION_NAME, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, 0, 800, 600, NULL, NULL, hInstance, NULL);
     
     ShowWindow(hwndMainWindow, nShowCmd);
     UpdateWindow(hwndMainWindow);
 
+    fps.out = tcsFpsInfo;
     fps.lastTime = GetTickCount();
 
     while (GetMessage(&msg, NULL, 0, 0))
     {
         DispatchMessage(&msg);
+        fpsLOG();
     }
 
     return (int) msg.wParam;

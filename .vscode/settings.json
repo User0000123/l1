@@ -11,6 +11,10 @@
         "matrixtransformations.h": "c",
         "modelsettings.h": "c",
         "model.h": "c",
-        "darray.h": "c"
+        "darray.h": "c",
+        "*.exe": "c",
+        "limits": "c",
+        "*.tcc": "c",
+        "windowsx.h": "c"
     }
 }
