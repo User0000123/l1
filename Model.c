@@ -20,6 +20,7 @@
 #define APPLICATION_NAME    _TEXT("3D Model")
 
 #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
+// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
 
 #define BACKGROUND_BRUSH    BLACK_BRUSH
 #define COLOR_IMAGE         RGB(255, 255, 255)
@@ -30,8 +31,8 @@
 #define MOVEMENT_SPEED      3
 
    /* Perspective projection */
-#define CAMERA_VIEW_WIDTH   2
-#define CAMERA_VIEW_HEIGHT  2
+DOUBLE CAMERA_VIEW_WIDTH =  2;
+DOUBLE CAMERA_VIEW_HEIGHT = 2;
 #define Z_NEAR              1
 #define Z_FAR               10
 
@@ -72,7 +73,7 @@ gsl_vector *eye;
 gsl_vector *target;
 gsl_vector *up;
 DOUBLE destR =          2;
-DOUBLE angleThetha =    M_PI / 2.0;
+DOUBLE angleThetha =    0;
 DOUBLE anglePhi =       0;
 byte keys[255];
 gsl_vector *straightViewDirection;
@@ -83,13 +84,13 @@ double translViewPort[] =
         R, 0, 0, R, 
         0, R, 0, R,
         0, 0, 1, 0,
-        0, 0, -1, 0
+        0, 0, 0, 1
     };
 
 double translProjection[] = 
     {
-        2.0 * Z_NEAR / CAMERA_VIEW_WIDTH, 0, 0, 0, 
-        0, 2.0 * Z_NEAR / CAMERA_VIEW_HEIGHT, 0, 0,
+        2.0 * Z_NEAR / 2.0, 0, 0, 0, 
+        0, 2.0 * Z_NEAR / 2.0, 0, 0,
         0, 0, Z_FAR / (Z_NEAR - Z_FAR), Z_NEAR * Z_FAR / (Z_NEAR - Z_FAR),
         0, 0, -1, 0
     };
@@ -102,6 +103,7 @@ double translView[] =
         0, 0, 0, 1
     };
 
+gsl_matrix *matrixTransformation;
 gsl_matrix matrixViewPort;
 gsl_matrix matrixProjection;
 gsl_matrix matrixView;
@@ -120,6 +122,10 @@ inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *re
 void applyTransformations()
 {
     memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
+
+    gsl_vector_set_zero(target);
+    gsl_vector_set(target, 2, -1);
+    gsl_vector_add(target, eye);
 
     gsl_vector_memcpy(zAxis, eye);
     gsl_vector_sub(zAxis, target);
@@ -145,21 +151,20 @@ void applyTransformations()
         translView[4*i + 3] *= -1;
     }
 
+    gsl_matrix_memcpy(matrixTransformation, &matrixViewPort);
+
+    MatrixMult(matrixTransformation, &matrixProjection);
+    MatrixMult(matrixTransformation, &matrixView);
+    ApplyMatrixM(matrixTransformation, MT_X_ROTATE, 0, 0, 0, angleThetha);
+    ApplyMatrixM(matrixTransformation, MT_Y_ROTATE, 0, 0, 0, anglePhi);
+
     for (int i = 1; i < pObjFile->v->nCurSize; i++)
     {
         gsl_vector *pVector = gvPaintVertices[i];
-        
-        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixView, pVector, 0, pResult);
+
+        gsl_blas_dgemv(CblasNoTrans, 1.0, matrixTransformation, pVector, 0, pResult);
         gsl_vector_memcpy(pVector, pResult);
-        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixProjection, pVector, 0, pResult);
-        gsl_vector_memcpy(pVector, pResult);
-        for (int j = 0; j < 3; j++)
-        {
-            pVector->data[j] /= pVector->data[3];
-        }
-        pVector->data[3] /= pVector->data[3];
-        gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
-        gsl_vector_memcpy(pVector, pResult);
+        gsl_vector_scale(pVector, 1.0 / gsl_vector_get(pVector, 3));
     }
 }
 
@@ -172,6 +177,7 @@ void InitializeResources()
     matrixViewPort = gsl_matrix_view_array(translViewPort, 4, 4).matrix;
     matrixProjection = gsl_matrix_view_array(translProjection, 4, 4).matrix;
     matrixView = gsl_matrix_view_array(translView, 4, 4).matrix;
+    matrixTransformation = gsl_matrix_alloc(4, 4);
 
     pResult = gsl_vector_calloc(4);
     xAxis = gsl_vector_calloc(4);
@@ -216,6 +222,7 @@ void FreeAllResources()
 
     gsl_block_free(gbPaintVertices);
     gsl_block_free(gbWorldVertices);
+    gsl_matrix_free(matrixTransformation);
 
     free(pResult);
     free(eye);
@@ -368,7 +375,7 @@ void MoveProc()
 
     if (keys[0x57])
     {
-        gsl_vector_set(straightViewDirection, 2, -1 * cameraSpeed);
+        gsl_vector_set(straightViewDirection, 2, -cameraSpeed);
         gsl_vector_add(eye,  straightViewDirection);
     }
 
@@ -378,19 +385,17 @@ void MoveProc()
         gsl_vector_add(eye,  straightViewDirection);
     }
 
-    // if (keys[0x41])
-    // {
-    //     gsl_vector_set(sideViewDirection, 0, -1 * cameraSpeed);
-    //     gsl_vector_add(eye, sideViewDirection);
-    //     gsl_vector_add(target, sideViewDirection);
-    // }
+    if (keys[0x41])
+    {
+        gsl_vector_set(sideViewDirection, 0, -1 * cameraSpeed);
+        gsl_vector_add(eye, sideViewDirection);
+    }
 
-    // if (keys[0x44])
-    // {
-    //     gsl_vector_set(sideViewDirection, 0, 1 * cameraSpeed);
-    //     gsl_vector_add(eye, sideViewDirection);
-    //     gsl_vector_add(target, sideViewDirection);
-    // }
+    if (keys[0x44])
+    {
+        gsl_vector_set(sideViewDirection, 0, 1 * cameraSpeed);
+        gsl_vector_add(eye, sideViewDirection);
+    }
 
     lastTime = GetTickCount();
 }
@@ -463,20 +468,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 int xMousePos = GET_X_LPARAM(lParam);
                 int yMousePos = GET_Y_LPARAM(lParam);
 
-                // angleThetha += (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
-                // anglePhi += (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI;
-                
-                ApplyMatrix(eye, MT_Y_ROTATE, 0, 0, 0, (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI);
+                angleThetha += (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
+                anglePhi += (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI;            
 
                 ptMousePrev.x = xMousePos;
                 ptMousePrev.y = yMousePos;
             }
             break;
         case WM_MOUSEWHEEL:
-            // zCamera += WHEEL_DELTA_SCALE * (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? 1 : -1);
-            // destR += WHEEL_DELTA_SCALE * (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? 1 : -1);
+            byte isScalePositive = GET_WHEEL_DELTA_WPARAM(wParam) < 0;
 
-            applyTransformations();
+            CAMERA_VIEW_HEIGHT += isScalePositive ? WHEEL_DELTA_SCALE : -WHEEL_DELTA_SCALE;
+            CAMERA_VIEW_WIDTH += isScalePositive ? WHEEL_DELTA_SCALE : -WHEEL_DELTA_SCALE;
+
+            translProjection[0] = 2.0 * Z_NEAR / CAMERA_VIEW_WIDTH;
+            translProjection[5] = 2.0 * Z_NEAR / CAMERA_VIEW_HEIGHT;
+
             break;
         case WM_KEYDOWN:    
             keys[wParam] = 1;

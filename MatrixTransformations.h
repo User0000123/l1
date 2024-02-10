@@ -13,5 +13,7 @@ typedef enum
 void InitializeMatrixTrans();
 void FinalizeMatrixTrans();
 void ApplyMatrix(gsl_vector *target, MT_TYPE mtType, double x, double y, double z, double angle);
+void ApplyMatrixM(gsl_matrix *target, MT_TYPE mtType, double x, double y, double z, double angle);
+void MatrixMult(gsl_matrix *pM1, gsl_matrix *pM2);
 
 #endif

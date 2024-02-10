@@ -111,6 +111,53 @@ void ApplyMatrix(gsl_vector *target, MT_TYPE mtType, double x, double y, double 
     gsl_vector_memcpy(target, result);
 }
 
+void ApplyMatrixM(gsl_matrix *target, MT_TYPE mtType, double x, double y, double z, double angle)
+{
+    switch (mtType)
+    {
+        case MT_MOTION:
+            motionMatrix[3] = x;        
+            motionMatrix[7] = y;        
+            motionMatrix[11] = z;
+        
+            gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, target, &mMotion, 0, resultM);
+            
+            break;
+        case MT_SCALE:
+            scaleMatrix[0] = x;
+            scaleMatrix[5] = y;
+            scaleMatrix[10] = z;
+
+            gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, target, &mScale, 0, resultM);
+            break;
+        case MT_X_ROTATE:
+            xRotateMatrix[5] = cos(angle);
+            xRotateMatrix[6] = -sin(angle);
+            xRotateMatrix[9] = sin(angle);
+            xRotateMatrix[10] = cos(angle);
+
+            gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, target, &mXRotate, 0, resultM);
+            break;
+        case MT_Y_ROTATE:
+            yRotateMatrix[0] = cos(angle);
+            yRotateMatrix[2] = sin(angle);
+            yRotateMatrix[8] = -sin(angle);
+            yRotateMatrix[10] = cos(angle);
+
+            gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, target, &mYRotate, 0, resultM);
+            break;
+    }
+
+    gsl_matrix_memcpy(target, resultM);
+}
+
+void MatrixMult(gsl_matrix *pM1, gsl_matrix *pM2)
+{
+    gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, pM1, pM2, 0, resultM);
+
+    gsl_matrix_memcpy(pM1, resultM);
+}
+
 // int main()
 // {
 //     InitializeMatrixTrans();
