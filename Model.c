@@ -24,8 +24,8 @@
 #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
 
-#define SWAP(a, b) {typeof(a) temp = a; a = b; b = temp;}
-#define SWAP_VECTORS(a, b) {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
+#define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
+#define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
 #define BACKGROUND_BRUSH    BLACK_BRUSH
 #define COLOR_IMAGE         RGB(255, 255, 255)
 
@@ -51,8 +51,8 @@ HBITMAP hbmBack;
 
     /* Screen bitmap */
 BITMAPINFO bmi;
-byte *pBytes;
 BITMAP bmp;
+byte *pBytes;
 
     /* Model info */
 RECT rcModelInfo;
@@ -76,28 +76,49 @@ BOOL isActivated;
 gsl_vector *eye;
 gsl_vector *target;
 gsl_vector *up;
+gsl_vector *xAxis;
+gsl_vector *yAxis;
+gsl_vector *zAxis;
 DOUBLE destR =          2;
 DOUBLE angleThetha =    M_PI_2 - 0.3;
 DOUBLE anglePhi =       M_PI_2 - 0.3;
-byte keys[255];
-gsl_vector *straightViewDirection;
-gsl_vector *sideViewDirection;
 
+    /* Light */
+gsl_vector *light;
+
+    /* Z buffer */
+double *zBuffer;
+
+    /* Model transformation matrices */
+gsl_matrix *matrixTransformation;
+gsl_matrix matrixViewPort;
+gsl_matrix matrixProjection;
+gsl_matrix matrixView;
+
+    /* Just a temp value for single-threaded computing */
+gsl_vector *pResult;
+
+    /* Keyboard */
+byte keys[255];
+
+    /* Multithreading */
 HTHDPOOL hPool;
 typedef struct {
+    HDC dc;
     int from;
     int to;
-    HDC dc;
     gsl_vector *pV0;
     gsl_vector *pV1;
     gsl_vector *pV2;
     gsl_vector *pA;
     gsl_vector *pB;
+    gsl_vector *pP;
+    gsl_vector *norm;
 } PARAMS;
 PARAMS params[6];
 HANDLE hTaskExecutedEvent;
-volatile long executed;
 
+    /* Arrays for wrapper matrices */
 double translViewPort[] = 
     {
         R, 0, 0, R, 
@@ -122,24 +143,6 @@ double translView[] =
         0, 0, 0, 1
     };
 
-gsl_matrix *matrixTransformation;
-gsl_matrix matrixViewPort;
-gsl_matrix matrixProjection;
-gsl_matrix matrixView;
-gsl_vector *pResult;
-gsl_vector *xAxis;
-gsl_vector *yAxis;
-gsl_vector *zAxis;
-
-gsl_vector *pV0;
-gsl_vector *pV1;
-gsl_vector *pV2;
-gsl_vector *pA;
-gsl_vector *pB;
-gsl_vector *pP;
-gsl_vector *light;
-gsl_vector *norm;
-double *zBuffer;
 
 inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *result)
 {
@@ -148,17 +151,12 @@ inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *re
     result->data[2] = v1->data[0] * v2->data[1] - v1->data[1] * v2->data[0]; 
 }
 
-void applyTransformations()
+void ApplyTransformations()
 {
     memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
-    // View matrix creation
-    // gsl_vector_set_zero(target);
-    // gsl_vector_set(target, 2, -1);
-    // gsl_vector_add(target, eye);
 
+    // View matrix creation
     gsl_vector_memcpy(zAxis, eye);
-    // ApplyMatrix(eye, MT_X_ROTATE, 0, 0, 0, angleThetha);
-    // ApplyMatrix(zAxis, MT_Y_ROTATE, 0, 0, 0, anglePhi);
     gsl_vector_sub(zAxis, target);
     gsl_vector_scale(zAxis, 1.0 / gsl_blas_dnrm2(zAxis));
 
@@ -167,8 +165,6 @@ void applyTransformations()
 
     vector_cross_product3(zAxis, xAxis, yAxis);
     gsl_vector_scale(yAxis, 1.0 / gsl_blas_dnrm2(yAxis));
-
-    // gsl_vector_memcpy(yAxis, up);
 
     for (int i = 0; i < 3; i++)
     {
@@ -184,15 +180,14 @@ void applyTransformations()
     {
         translView[4*i + 3] *= -1;
     }
-    /////////
+    ///////////////////////////////////////////////
     
-    // Creating global transformation matrix
+    // Creation global transformation matrix
     gsl_matrix_memcpy(matrixTransformation, &matrixViewPort);
 
     MatrixMult(matrixTransformation, &matrixProjection);
     MatrixMult(matrixTransformation, &matrixView);
-    // ApplyMatrixM(matrixTransformation, MT_X_ROTATE, 0, 0, 0, angleThetha);
-    // ApplyMatrixM(matrixTransformation, MT_Y_ROTATE, 0, 0, 0, anglePhi);
+    // Also, there may be multiplication by the tranformation matix 
     ////////
     
     for (int i = 1; i < pObjFile->v->nCurSize; i++)
@@ -228,11 +223,6 @@ void InitializeResources()
     up = gsl_vector_calloc(4);
     gsl_vector_set_basis(up, 1);
     target = gsl_vector_calloc(4);
-
-    straightViewDirection = gsl_vector_alloc(4);
-    gsl_vector_set_basis(straightViewDirection, 2);
-    sideViewDirection = gsl_vector_alloc(4);
-    gsl_vector_set_basis(sideViewDirection, 0);
     
     gbWorldVertices = gsl_block_alloc(pObjFile->v->nCurSize * 4);
     gbPaintVertices = gsl_block_alloc(pObjFile->v->nCurSize * 4);
@@ -247,7 +237,7 @@ void InitializeResources()
         gsl_vector_memcpy(gvWorldVertices[i], pObjFile->v->data[i]);
     }
     
-    applyTransformations();
+    ApplyTransformations();
 
     tcsFpsInfo = calloc(FPS_OUT_MAX_LENGTH, sizeof(TCHAR));
 
@@ -263,14 +253,16 @@ void InitializeResources()
     light = gsl_vector_calloc(4);
     norm = gsl_vector_calloc(4);
 
-    // for (int i = 0; i < 6; i++)
-    // {
-    //     params[i].pV0 = gsl_vector_calloc(4);
-    //     params[i].pV1 = gsl_vector_calloc(4); 
-    //     params[i].pV2 = gsl_vector_calloc(4);
-    //     params[i].pA = gsl_vector_calloc(4);
-    //     params[i].pB = gsl_vector_calloc(4);
-    // }
+    for (int i = 0; i < 6; i++)
+    {
+        params[i].pV0 = gsl_vector_calloc(4);
+        params[i].pV1 = gsl_vector_calloc(4); 
+        params[i].pV2 = gsl_vector_calloc(4);
+        params[i].pA = gsl_vector_calloc(4);
+        params[i].pB = gsl_vector_calloc(4);
+        params[i].pP = gsl_vector_calloc(4);
+        params[i].norm = gsl_vector_calloc(4);
+    }
 }
 
 void FreeAllResources()
@@ -292,6 +284,7 @@ void FreeAllResources()
     gsl_vector_free(pV2);
     gsl_vector_free(light);
     gsl_vector_free(norm);
+
     // for (int i = 0; i < 6; i++)
     // {
     //     gsl_vector_free(params[i].pA);
@@ -317,6 +310,7 @@ void FreeAllResources()
     DestroyObjFileInfo(pObjFile);
     fclose(objFile);
     FinalizeMatrixTrans();
+    KillTimer(hwndMainWindow, TIMER_REPAINT_ID);
 }
 
 inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1)
@@ -726,8 +720,6 @@ void MoveProc()
         gsl_vector_sub(pResult, eye);
         gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
         gsl_vector_sub(eye, pResult);
-        // gsl_vector_set(straightViewDirection, 2, 1 * cameraSpeed);
-        // gsl_vector_add(eye,  straightViewDirection);
     }
 
     if (keys[0x41])
@@ -738,8 +730,6 @@ void MoveProc()
         gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (-cameraSpeed));
         gsl_vector_add(eye, xAxis);
         gsl_vector_add(target, xAxis);
-        // gsl_vector_set(sideViewDirection, 0, -1 * cameraSpeed);
-        // gsl_vector_add(eye, sideViewDirection);
     }
 
     if (keys[0x44])
@@ -750,8 +740,6 @@ void MoveProc()
         gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (cameraSpeed));
         gsl_vector_add(eye, xAxis);
         gsl_vector_add(target, xAxis);
-        // gsl_vector_set(sideViewDirection, 0, 1 * cameraSpeed);
-        // gsl_vector_add(eye, sideViewDirection);
     }
 
     lastTime = GetTickCount();
@@ -763,13 +751,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         /* Section for window messages */
         case WM_CREATE:
-            hbr = CreateSolidBrush(RGB(255,255,255));
             InitializeResources();
             SetTimer(hWnd, TIMER_REPAINT_ID, TIMER_REPAINT_MS, NULL);
             break;
         case WM_TIMER:
             MoveProc();
-            applyTransformations();
+            ApplyTransformations();
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         case WM_PAINT:
@@ -790,11 +777,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             FinalizeBuffer(&hdcBack, &hbmBack);
             InitializeBuffer(hWnd, &hdcBack, &hbmBack, &rcClient);
             
+            // for fps label
             rcModelInfo.left = rcClient.left;
             rcModelInfo.top = rcClient.bottom - 30;
             rcModelInfo.bottom = rcClient.bottom;
             rcModelInfo.right = rcClient.left + 80;
 
+            // reinitializing BITMAPINFO structure
             GetObject(hbmBack, sizeof(BITMAP), &bmp);
 
             memset(&bmi, 0, sizeof(bmi));
@@ -805,7 +794,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             double scaleX = bmp.bmWidth / 2.0;
             double scaleY = bmp.bmHeight / 2.0;
-
+            
             translViewPort[0] = scaleY;
             translViewPort[3] = scaleX;
             translViewPort[5] = -scaleY;

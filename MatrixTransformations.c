@@ -106,6 +106,9 @@ void ApplyMatrix(gsl_vector *target, MT_TYPE mtType, double x, double y, double 
 
             gsl_blas_dgemv(CblasNoTrans, 1.0, &mYRotate, target, 0, result);
             break;
+        case MT_Z_ROTATE:
+            // there may be MT_Z_ROTATE
+            break;
     }
 
     gsl_vector_memcpy(target, result);
@@ -146,6 +149,9 @@ void ApplyMatrixM(gsl_matrix *target, MT_TYPE mtType, double x, double y, double
 
             gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, target, &mYRotate, 0, resultM);
             break;
+        case MT_Z_ROTATE:
+            // there may be MT_Z_ROTATE
+            break;
     }
 
     gsl_matrix_memcpy(target, resultM);
@@ -157,13 +163,3 @@ void MatrixMult(gsl_matrix *pM1, gsl_matrix *pM2)
 
     gsl_matrix_memcpy(pM1, resultM);
 }
-
-// int main()
-// {
-//     InitializeMatrixTrans();
-//     double mt[] = {1, 2, 3, 1};
-//     gsl_vector matrix = gsl_vector_view_array(mt, 4).vector;
-
-//     ApplyMatrix(&matrix, MT_MOTION, 0, 0, 0, 0);
-    
-// }
