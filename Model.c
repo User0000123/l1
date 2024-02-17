@@ -13,15 +13,19 @@
 #include "Model.h"
 #include "MatrixTransformations.h"
 #include "Parser.h"
+#include "ThreadPool.h"
 
 #include "DoubleBuffering.h"
 #include "FpsUtility.h"
 
 #define APPLICATION_NAME    _TEXT("3D Model")
 
+// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj" 
 #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
 
+#define SWAP(a, b) {typeof(a) temp = a; a = b; b = temp;}
+#define SWAP_VECTORS(a, b) {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
 #define BACKGROUND_BRUSH    BLACK_BRUSH
 #define COLOR_IMAGE         RGB(255, 255, 255)
 
@@ -73,11 +77,26 @@ gsl_vector *eye;
 gsl_vector *target;
 gsl_vector *up;
 DOUBLE destR =          2;
-DOUBLE angleThetha =    0;
-DOUBLE anglePhi =       0;
+DOUBLE angleThetha =    M_PI_2 - 0.3;
+DOUBLE anglePhi =       M_PI_2 - 0.3;
 byte keys[255];
 gsl_vector *straightViewDirection;
 gsl_vector *sideViewDirection;
+
+HTHDPOOL hPool;
+typedef struct {
+    int from;
+    int to;
+    HDC dc;
+    gsl_vector *pV0;
+    gsl_vector *pV1;
+    gsl_vector *pV2;
+    gsl_vector *pA;
+    gsl_vector *pB;
+} PARAMS;
+PARAMS params[6];
+HANDLE hTaskExecutedEvent;
+volatile long executed;
 
 double translViewPort[] = 
     {
@@ -112,6 +131,16 @@ gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
 
+gsl_vector *pV0;
+gsl_vector *pV1;
+gsl_vector *pV2;
+gsl_vector *pA;
+gsl_vector *pB;
+gsl_vector *pP;
+gsl_vector *light;
+gsl_vector *norm;
+double *zBuffer;
+
 inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *result)
 {
     result->data[0] = v1->data[1] * v2->data[2] - v1->data[2] * v2->data[1]; 
@@ -122,19 +151,24 @@ inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *re
 void applyTransformations()
 {
     memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
-
-    gsl_vector_set_zero(target);
-    gsl_vector_set(target, 2, -1);
-    gsl_vector_add(target, eye);
+    // View matrix creation
+    // gsl_vector_set_zero(target);
+    // gsl_vector_set(target, 2, -1);
+    // gsl_vector_add(target, eye);
 
     gsl_vector_memcpy(zAxis, eye);
+    // ApplyMatrix(eye, MT_X_ROTATE, 0, 0, 0, angleThetha);
+    // ApplyMatrix(zAxis, MT_Y_ROTATE, 0, 0, 0, anglePhi);
     gsl_vector_sub(zAxis, target);
     gsl_vector_scale(zAxis, 1.0 / gsl_blas_dnrm2(zAxis));
 
     vector_cross_product3(up, zAxis, xAxis);
     gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis));
 
-    gsl_vector_memcpy(yAxis, up);
+    vector_cross_product3(zAxis, xAxis, yAxis);
+    gsl_vector_scale(yAxis, 1.0 / gsl_blas_dnrm2(yAxis));
+
+    // gsl_vector_memcpy(yAxis, up);
 
     for (int i = 0; i < 3; i++)
     {
@@ -150,14 +184,17 @@ void applyTransformations()
     {
         translView[4*i + 3] *= -1;
     }
-
+    /////////
+    
+    // Creating global transformation matrix
     gsl_matrix_memcpy(matrixTransformation, &matrixViewPort);
 
     MatrixMult(matrixTransformation, &matrixProjection);
     MatrixMult(matrixTransformation, &matrixView);
-    ApplyMatrixM(matrixTransformation, MT_X_ROTATE, 0, 0, 0, angleThetha);
-    ApplyMatrixM(matrixTransformation, MT_Y_ROTATE, 0, 0, 0, anglePhi);
-
+    // ApplyMatrixM(matrixTransformation, MT_X_ROTATE, 0, 0, 0, angleThetha);
+    // ApplyMatrixM(matrixTransformation, MT_Y_ROTATE, 0, 0, 0, anglePhi);
+    ////////
+    
     for (int i = 1; i < pObjFile->v->nCurSize; i++)
     {
         gsl_vector *pVector = gvPaintVertices[i];
@@ -186,6 +223,7 @@ void InitializeResources()
 
     eye = gsl_vector_calloc(4);
     gsl_vector_set(eye, 2, destR);
+    gsl_vector_set(eye, 3, 1);
 
     up = gsl_vector_calloc(4);
     gsl_vector_set_basis(up, 1);
@@ -212,10 +250,33 @@ void InitializeResources()
     applyTransformations();
 
     tcsFpsInfo = calloc(FPS_OUT_MAX_LENGTH, sizeof(TCHAR));
+
+    hPool = CreateThreadPool(100, 6);
+    hTaskExecutedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+    pV0 = gsl_vector_calloc(4);
+    pV1 = gsl_vector_calloc(4); 
+    pV2 = gsl_vector_calloc(4);
+    pA = gsl_vector_calloc(4);
+    pB = gsl_vector_calloc(4);
+    pP = gsl_vector_calloc(4);
+    light = gsl_vector_calloc(4);
+    norm = gsl_vector_calloc(4);
+
+    // for (int i = 0; i < 6; i++)
+    // {
+    //     params[i].pV0 = gsl_vector_calloc(4);
+    //     params[i].pV1 = gsl_vector_calloc(4); 
+    //     params[i].pV2 = gsl_vector_calloc(4);
+    //     params[i].pA = gsl_vector_calloc(4);
+    //     params[i].pB = gsl_vector_calloc(4);
+    // }
 }
 
 void FreeAllResources()
 {
+    // DestroyThreadPool(hPool);
+    CloseHandle(hTaskExecutedEvent);
     free(tcsFpsInfo);
     free(gvPaintVertices);
     free(gvWorldVertices);
@@ -223,6 +284,22 @@ void FreeAllResources()
     gsl_block_free(gbPaintVertices);
     gsl_block_free(gbWorldVertices);
     gsl_matrix_free(matrixTransformation);
+    gsl_vector_free(pA);
+    gsl_vector_free(pB);
+    gsl_vector_free(pP);
+    gsl_vector_free(pV0);
+    gsl_vector_free(pV1);
+    gsl_vector_free(pV2);
+    gsl_vector_free(light);
+    gsl_vector_free(norm);
+    // for (int i = 0; i < 6; i++)
+    // {
+    //     gsl_vector_free(params[i].pA);
+    //     gsl_vector_free(params[i].pB);
+    //     gsl_vector_free(params[i].pV0);
+    //     gsl_vector_free(params[i].pV1);
+    //     gsl_vector_free(params[i].pV2);
+    // }
 
     free(pResult);
     free(eye);
@@ -235,83 +312,215 @@ void FreeAllResources()
     free(sideViewDirection);
 
     free(pBytes);
+    free(zBuffer);
 
     DestroyObjFileInfo(pObjFile);
     fclose(objFile);
     FinalizeMatrixTrans();
 }
 
-inline void DrawCustomLine(HDC dc, gsl_vector *pVector1, gsl_vector *pVector2)
+inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1)
 {
-    int x1 = (int) gsl_vector_get(pVector1, 0);
-    int y1 = (int) gsl_vector_get(pVector1, 1);
-    int x2 = (int) gsl_vector_get(pVector2, 0);
-    int y2 = (int) gsl_vector_get(pVector2, 1);
+    BOOL isTranspose = FALSE;
 
-    if (x1 < 0 || x2 < 0 || x1 >= bmp.bmWidth || x2 >= bmp.bmWidth || y1 < 0 || y2 < 0 || y1 >= bmp.bmHeight || y2 >= bmp.bmHeight) return;
+    if (x0 < 0 || x1 < 0 || x0 >= bmp.bmWidth || x1 >= bmp.bmWidth || y0 < 0 || y1 < 0 || y0 >= bmp.bmHeight || y1 >= bmp.bmHeight) return;
 
-    int deltaX = abs(x2 - x1);
-    int deltaY = abs(y2 - y1);
-    int signX = x2 >= x1 ? 1 : -1;
-    int signY = y2 >= y1 ? 1 : -1;
-    int offset;
-
-    if (deltaY <= deltaX)
+    if (abs(x1 - x0) < abs (y1 - y0))
     {
-        int d = (deltaY << 1) - deltaX;
-        int d1 = deltaY << 1;
-        int d2 = (deltaY - deltaX) << 1;
+        SWAP(x0, y0);
+        SWAP(x1, y1);
+        isTranspose = TRUE;
+    }
 
-        offset = (y1 * bmp.bmWidth + x1) * 4;
-        pBytes[offset + 0] = 255;
-        pBytes[offset + 1] = 255;
-        pBytes[offset + 2] = 255;
+    if (x0 > x1)
+    {
+        SWAP(x0, x1);
+        SWAP(y0, y1);
+    }
 
-        for (int x = x1 + signX, y = y1, i = 1; i < deltaX; i++, x += signX)
+    int dx = x1 - x0;
+    int dy = y1 - y0;
+    int signY = y1 >= y0 ? 1 : -1;
+    int dxDouble = dx << 1;
+    int error = 0;
+    int offset;
+    int bmWidth = bmp.bmWidth;
+    int derror = abs(dy) << 1;
+
+    for (int x = x0, y = y0; x <= x1; x++)
+    {
+        offset = (y * bmWidth + x) << 2;
+        if (isTranspose)
         {
-            if (d > 0)
-            {
-                d += d2;
-                y += signY;
-            }
-            else
-            {
-                d += d1;
-            }
-
-        offset = (y * bmp.bmWidth + x) * 4;
+            offset = (x * bmWidth + y) << 2;
+        }
         pBytes[offset + 0] = 255;
         pBytes[offset + 1] = 255;
         pBytes[offset + 2] = 255;
+        // InterlockedOr((long *)(pBytes + offset), 0x00FFFFFF);
+
+        error += derror;
+
+        if (error > dx)
+        {
+            y += signY;
+            error -= dxDouble;
         }
     }
-    else
+}
+
+// inline void DrawTriangle(HDC dc, gsl_vector_int *pTriangleVertices, PARAMS *params)
+// {
+//     gsl_vector_memcpy(params->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
+//     gsl_vector_memcpy(params->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
+//     gsl_vector_memcpy(params->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
+
+//     if (params->pV0->data[1] == params->pV1->data[1] && params->pV0->data[1] == params->pV2->data[1]) return;
+
+//     if (params->pV0->data[1] > params->pV1->data[1]) SWAP_VECTORS(params->pV0, params->pV1);
+//     if (params->pV0->data[1] > params->pV2->data[1]) SWAP_VECTORS(params->pV0, params->pV2);
+//     if (params->pV1->data[1] > params->pV2->data[1]) SWAP_VECTORS(params->pV1, params->pV2);
+
+//     int total_height = params->pV2->data[1] - params->pV0->data[1];
+
+//     for (int i=0; i<total_height; i++) {
+//         BOOL second_half = i>params->pV1->data[1]-params->pV0->data[1] || params->pV1->data[1]==params->pV0->data[1];
+//         int segment_height = second_half ? params->pV2->data[1] - params->pV1->data[1] : params->pV1->data[1] - params->pV0->data[1];
+//         float alpha = (float) i / total_height;
+//         float beta  = (float)(i - (second_half ? params->pV1->data[1] - params->pV0->data[1] : 0)) / segment_height;
+        
+//         gsl_vector_memcpy(params->pA, params->pV2);
+        
+//         gsl_vector_sub(params->pA, params->pV0);
+//         // __m256d vec_a = _mm256_loadu_pd(pA->data); // Загружаем первый массив в регистр SIMD
+//         // __m256d vec_b = _mm256_loadu_pd(pV0->data); // Загружаем второй массив в другой регистр SIMD
+//         // __m256d vec_sum = _mm256_sub_pd(vec_a, vec_b); // Выполняем SIMD-сложение
+//         // _mm256_storeu_pd(pA->data, vec_sum); // Сохраняем результат обратно в память
+        
+//         gsl_vector_scale(params->pA, alpha);
+
+//         gsl_vector_add(params->pA, params->pV0);
+//         // vec_a = _mm256_loadu_pd(pA->data); // Загружаем первый массив в регистр SIMD
+//         // vec_b = _mm256_loadu_pd(pV0->data); // Загружаем второй массив в другой регистр SIMD
+//         // vec_sum = _mm256_add_pd(vec_a, vec_b); // Выполняем SIMD-сложение
+//         // _mm256_storeu_pd(pA->data, vec_sum); // 
+
+//         if (second_half)
+//         {
+//             gsl_vector_memcpy(params->pB, params->pV2);
+//             gsl_vector_sub(params->pB, params->pV1);
+//             // vec_a = _mm256_loadu_pd(pB->data); // Загружаем первый массив в регистр SIMD
+//             // vec_b = _mm256_loadu_pd(pV1->data); // Загружаем второй массив в другой регистр SIMD
+//             // vec_sum = _mm256_sub_pd(vec_a, vec_b); // Выполняем SIMD-сложение
+//             // _mm256_storeu_pd(pB->data, vec_sum); // 
+
+//             gsl_vector_scale(params->pB, beta);
+//             gsl_vector_add(params->pB, params->pV1);
+//             // vec_a = _mm256_loadu_pd(pB->data); // Загружаем первый массив в регистр SIMD
+//             // vec_b = _mm256_loadu_pd(pV1->data); // Загружаем второй массив в другой регистр SIMD
+//             // vec_sum = _mm256_add_pd(vec_a, vec_b); // Выполняем SIMD-сложение
+//             // _mm256_storeu_pd(pB->data, vec_sum); //
+//         }
+//         else
+//         {
+//             gsl_vector_memcpy(params->pB, params->pV1);
+//             gsl_vector_sub(params->pB, params->pV0);
+//             // vec_a = _mm256_loadu_pd(pB->data); // Загружаем первый массив в регистр SIMD
+//             // vec_b = _mm256_loadu_pd(pV0->data); // Загружаем второй массив в другой регистр SIMD
+//             // vec_sum = _mm256_sub_pd(vec_a, vec_b); // Выполняем SIMD-сложение
+//             // _mm256_storeu_pd(pB->data, vec_sum); // 
+
+//             gsl_vector_scale(params->pB, beta);
+//             gsl_vector_add(params->pB, params->pV0);
+//             // vec_a = _mm256_loadu_pd(pB->data); // Загружаем первый массив в регистр SIMD
+//             // vec_b = _mm256_loadu_pd(pV0->data); // Загружаем второй массив в другой регистр SIMD
+//             // vec_sum = _mm256_add_pd(vec_a, vec_b); // Выполняем SIMD-сложение
+//             // _mm256_storeu_pd(pB->data, vec_sum); //
+//         }
+        
+//         int offset;
+//         if (params->pA->data[0] > params->pB->data[0]) SWAP_VECTORS(params->pA, params->pB);
+//         for (int j = params->pA->data[0]; j <= params->pB->data[0]; j++) {
+//             if (j < 0 || j >= bmp.bmWidth || ((int) params->pV0->data[1] + i) < 0 || ((int) params->pV0->data[1] + i) >= bmp.bmHeight) continue;
+//             // offset = (((int) pV0->data[1] + i) * bmp.bmWidth + j) << 2;
+//             InterlockedOr((long *)(pBytes + offset), 0x00FFFFFF);
+//             // pBytes[offset + 0] = 255;
+//             // pBytes[offset + 1] = 255;
+//             // pBytes[offset + 2] = 255;
+//         }
+//     }
+// }
+
+inline void DrawTriangle(HDC dc, gsl_vector_int *pTriangleVertices, byte r, byte g, byte b)
+{
+    gsl_vector_memcpy(pV0, gvPaintVertices[pTriangleVertices->data[0]]);
+    gsl_vector_memcpy(pV1, gvPaintVertices[pTriangleVertices->data[1]]);
+    gsl_vector_memcpy(pV2, gvPaintVertices[pTriangleVertices->data[2]]);
+
+    if (pV0->data[1] > pV1->data[1]) SWAP_VECTORS(pV0, pV1);
+    if (pV0->data[1] > pV2->data[1]) SWAP_VECTORS(pV0, pV2);
+    if (pV1->data[1] > pV2->data[1]) SWAP_VECTORS(pV1, pV2);
+
+    for (int i = 0; i < 3; i++)
     {
-        int d = (deltaX << 1) - deltaY;
-        int d1 = deltaX << 1;
-        int d2 = (deltaX - deltaY) << 1;
+        pV0->data[0] = round(pV0->data[0]);
+        pV0->data[1] = round(pV0->data[1]);
+        pV1->data[0] = round(pV1->data[0]);
+        pV1->data[1] = round(pV1->data[1]);
+        pV2->data[0] = round(pV2->data[0]);
+        pV2->data[1] = round(pV2->data[1]);
+    }
+    // if (pV0->data[1] == pV1->data[1] && pV0->data[1] == pV2->data[1]) return;
 
-        offset = (y1 * bmp.bmWidth + x1) * 4;
-        pBytes[offset + 0] = 255;
-        pBytes[offset + 1] = 255;
-        pBytes[offset + 2] = 255;
+    int total_height = pV2->data[1] - pV0->data[1];
+    // r = rand() % 256;
+    // g = rand() % 256;
+    // b = rand() % 256;
+    for (int i=0; i<total_height; i++) {
+        BOOL second_half = i>pV1->data[1]-pV0->data[1] || pV1->data[1]==pV0->data[1];
+        int segment_height = (second_half ? pV2->data[1] - pV1->data[1] : pV1->data[1] - pV0->data[1]);
+        float alpha = (float) i / total_height;
+        float beta  = (float)(i - (second_half ? pV1->data[1] - pV0->data[1] : 0)) / segment_height;
+        
+        gsl_vector_memcpy(pA, pV2);
+        gsl_vector_sub(pA, pV0);
+        gsl_vector_scale(pA, alpha);
+        gsl_vector_add(pA, pV0);    
 
-        for (int x = x1, y = y1 + signY, i = 1; i <= deltaY; i++, y += signY)
+        if (second_half)
         {
-            if (d > 0)
-            {
-                d += d2;
-                x += signX;
+            gsl_vector_memcpy(pB, pV2);
+            gsl_vector_sub(pB, pV1);
+            gsl_vector_scale(pB, beta);
+            gsl_vector_add(pB, pV1);
+        }
+        else
+        {
+            gsl_vector_memcpy(pB, pV1);
+            gsl_vector_sub(pB, pV0);
+            gsl_vector_scale(pB, beta);
+            gsl_vector_add(pB, pV0);
+        }
+        
+        int offset;
+        if (pA->data[0] > pB->data[0]) SWAP_VECTORS(pA, pB);
+        for (int j = pA->data[0]; j <= pB->data[0]; j++) {
+            if (j < 0 || j >= bmp.bmWidth || ((int) pV0->data[1] + i) < 0 || ((int) pV0->data[1] + i) >= bmp.bmHeight) continue;
+            float phi = abs(1 - pB->data[0]/pA->data[0]) < 1e-3 ? 1.0 : (float)(j-pA->data[0])/(float)(pB->data[0]-pA->data[0]);
+            gsl_vector_memcpy(pP, pB);
+            gsl_vector_sub(pP, pA);
+            gsl_vector_scale(pP, phi);
+            gsl_vector_add(pP, pA);
+
+            offset = (((int) pV0->data[1] + i) * bmp.bmWidth + j) << 2;
+            int idx = j+(pV0->data[1] + i)*bmp.bmWidth;
+            if (zBuffer[idx] > pP->data[2]) {
+                zBuffer[idx] = pP->data[2];
+
+                pBytes[offset + 0] = r;
+                pBytes[offset + 1] = g;
+                pBytes[offset + 2] = b;    
             }
-            else
-            {
-                d += d1;
-            }
-            
-            offset = (y * bmp.bmWidth + x) * 4;
-            pBytes[offset + 0] = 255;
-            pBytes[offset + 1] = 255;
-            pBytes[offset + 2] = 255;
         }
     }
 }
@@ -338,6 +547,45 @@ void SetFullScreen(HWND hwnd)
     }
 }
 
+// void task(LPVOID params)
+// {
+//     PARAMS *param = (PARAMS *) params;
+//     for (int i = param->from; i < param->to; i++)
+//     {
+//         gsl_vector_int *pVector = pObjFile->fv->data[i];
+
+//         DrawTriangle(param->dc, pVector, param);
+//     }
+//     SetEvent(hTaskExecutedEvent);
+//     // ExitThread(0);
+//     // InterlockedAdd(&executed, 1);
+//     // return 0;
+// }
+void task(LPVOID params)
+{
+    PARAMS *param = (PARAMS *) params;
+    for (int i = param->from; i < param->to; i++)
+    {
+        gsl_vector_int *pVector = pObjFile->fv->data[i];
+        gsl_vector *pV1, *pV2;
+
+        for (int j = 0; j < pVector->size - 1; j++)
+        {
+            pV1 = gvPaintVertices[pVector->data[j]];
+            pV2 = gvPaintVertices[pVector->data[j + 1]];
+
+            DrawLine(param->dc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
+        }       
+        pV1 = gvPaintVertices[pVector->data[0]];
+        pV2 = gvPaintVertices[pVector->data[pVector->size - 1]];         
+        DrawLine(param->dc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
+    }
+    SetEvent(hTaskExecutedEvent);
+    // ExitThread(0);
+    // InterlockedAdd(&executed, 1);
+    // return 0;
+}
+HBRUSH hbr;
 void DrawProc(HDC hdc)
 {
     SaveDC(hdc);
@@ -346,17 +594,108 @@ void DrawProc(HDC hdc)
 
     GetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
     
+    // memset(zBuffer,-10, sizeof(double) * bmp.bmWidth * bmp.bmHeight);
+    for (int i = 0; i < bmp.bmWidth * bmp.bmHeight; i++)
+    {
+        zBuffer[i] = 10;
+    }
+    gsl_vector_memcpy(light, target);
+    gsl_vector_sub(light, eye);
+    gsl_vector_scale(light, 1.0 / gsl_blas_dnrm2(light));
+    srand(100);
+
     for (int i = 1; i < pObjFile->fv->nCurSize; i++)
     {
         gsl_vector_int *pVector = pObjFile->fv->data[i];
 
-        for (int j = 0; j < pVector->size - 1; j++)
+        // for (int j = 0; j < pVector->size - 1; j++)
+        // {
+        //     pV1 = gvWorldVertices[pVector->data[j]];
+        //     pV2 = gvWorldVertices[pVector->data[j + 1]];
+
+        //     // gsl_vector_fprintf(stdout, pV1, "%lf");
+        //     // gsl_vector_fprintf(stdout, pV2, "%lf");
+        //     DrawLine(hdc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
+        // }       
+        // pV1 = gvPaintVertices[pVector->data[0]];
+        // pV2 = gvPaintVertices[pVector->data[pVector->size - 1]];         
+        // DrawLine(hdc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]);
+        gsl_vector_memcpy(pV0, gvWorldVertices[pVector->data[0]]);
+        gsl_vector_memcpy(pV1, gvWorldVertices[pVector->data[1]]);
+        gsl_vector_memcpy(pV2, gvWorldVertices[pVector->data[2]]);
+
+        // if (pV0->data[1] > pV1->data[1]) SWAP_VECTORS(pV0, pV1);
+        // if (pV0->data[1] > pV2->data[1]) SWAP_VECTORS(pV0, pV2);
+        // if (pV1->data[1] > pV2->data[1]) SWAP_VECTORS(pV1, pV2);
+
+        gsl_vector_memcpy(pA, pV1);
+        gsl_vector_sub(pA, pV0);
+
+        gsl_vector_memcpy(pB, pV2);
+        gsl_vector_sub(pB, pV0);
+
+        // if (pV2->data[0] < pV1->data[0]) SWAP_VECTORS(pA, pB);
+        vector_cross_product3(pB, pA, norm);
+        gsl_vector_scale(norm, 1.0 / gsl_blas_dnrm2(norm));
+        double intens;
+        gsl_blas_ddot(light, norm, &intens); 
+        if (intens > 0)
         {
-            DrawCustomLine(hdc, gvPaintVertices[pVector->data[j]], gvPaintVertices[pVector->data[j + 1]]); 
-        }                
-        DrawCustomLine(hdc, gvPaintVertices[pVector->data[0]], gvPaintVertices[pVector->data[pVector->size - 1]]);
+            DrawTriangle(hdc, pVector, 255 * intens, 255 * intens, 255 * intens);
+        }
     }
 
+    // int delta = pObjFile->fv->nCurSize / 6;
+    // params[0].from = 1;
+    // params[0].to = 1 + delta;
+    // params[0].dc = hdc;
+    // SubmitTask(hPool, task, params);
+    // // CreateThread(NULL, 0, task, params, 0, NULL);
+    // for (int i = 1; i < 5; i++)
+    // {
+    //     params[i].from = params[i - 1].to;
+    //     params[i].to = params[i].from + delta;
+    //     params[i].dc = hdc;
+    //     SubmitTask(hPool, task, params + i);
+    //     // CreateThread(NULL, 0, task, params + i, 0, NULL);
+    // }
+    // params[5].from = params[4].to;
+    // params[5].to = pObjFile->fv->nCurSize;
+    // params[5].dc = hdc;
+    // SubmitTask(hPool, task, params + 5);
+    // CreateThread(NULL, 0, task, params + 5, 0, NULL);
+
+    // int delta = pObjFile->fv->nCurSize / 6;
+    // params[0].from = 1;
+    // params[0].to = 1 + delta;
+    // params[0].dc = hdc;
+    // SubmitTask(hPool, task, params);
+    // // CreateThread(NULL, 0, task, params, 0, NULL);
+    // for (int i = 1; i < 5; i++)
+    // {
+    //     params[i].from = params[i - 1].to;
+    //     params[i].to = params[i].from + delta;
+    //     params[i].dc = hdc;
+    //     SubmitTask(hPool, task, params + i);
+    //     // CreateThread(NULL, 0, task, params + i, 0, NULL);
+    // }
+    // params[5].from = params[4].to;
+    // params[5].to = pObjFile->fv->nCurSize;
+    // params[5].dc = hdc;
+    // SubmitTask(hPool, task, params + 5);
+    // // CreateThread(NULL, 0, task, params + 5, 0, NULL);
+    
+    // while (executed < 6)
+    // {
+
+    // }
+    // executed = 0;
+    // while (GetExecutedTasksCount(hPool) < 6)
+    // {
+    //     WaitForSingleObject(hTaskExecutedEvent, INFINITE);
+    // }
+    // SetExecutedTasksCount(hPool, 0);
+    
     SetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
 
     // FPS counter //////////////////////////////////////
@@ -375,26 +714,44 @@ void MoveProc()
 
     if (keys[0x57])
     {
-        gsl_vector_set(straightViewDirection, 2, -cameraSpeed);
-        gsl_vector_add(eye,  straightViewDirection);
+        gsl_vector_memcpy(pResult, target);
+        gsl_vector_sub(pResult, eye);
+        gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
+        gsl_vector_add(eye, pResult);
     }
 
     if (keys[0x53])
     {
-        gsl_vector_set(straightViewDirection, 2, 1 * cameraSpeed);
-        gsl_vector_add(eye,  straightViewDirection);
+        gsl_vector_memcpy(pResult, target);
+        gsl_vector_sub(pResult, eye);
+        gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
+        gsl_vector_sub(eye, pResult);
+        // gsl_vector_set(straightViewDirection, 2, 1 * cameraSpeed);
+        // gsl_vector_add(eye,  straightViewDirection);
     }
 
     if (keys[0x41])
     {
-        gsl_vector_set(sideViewDirection, 0, -1 * cameraSpeed);
-        gsl_vector_add(eye, sideViewDirection);
+        gsl_vector_memcpy(pResult, target);
+        gsl_vector_sub(pResult, eye);
+        vector_cross_product3(pResult, up, xAxis);
+        gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (-cameraSpeed));
+        gsl_vector_add(eye, xAxis);
+        gsl_vector_add(target, xAxis);
+        // gsl_vector_set(sideViewDirection, 0, -1 * cameraSpeed);
+        // gsl_vector_add(eye, sideViewDirection);
     }
 
     if (keys[0x44])
     {
-        gsl_vector_set(sideViewDirection, 0, 1 * cameraSpeed);
-        gsl_vector_add(eye, sideViewDirection);
+        gsl_vector_memcpy(pResult, target);
+        gsl_vector_sub(pResult, eye);
+        vector_cross_product3(pResult, up, xAxis);
+        gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (cameraSpeed));
+        gsl_vector_add(eye, xAxis);
+        gsl_vector_add(target, xAxis);
+        // gsl_vector_set(sideViewDirection, 0, 1 * cameraSpeed);
+        // gsl_vector_add(eye, sideViewDirection);
     }
 
     lastTime = GetTickCount();
@@ -406,6 +763,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         /* Section for window messages */
         case WM_CREATE:
+            hbr = CreateSolidBrush(RGB(255,255,255));
             InitializeResources();
             SetTimer(hWnd, TIMER_REPAINT_ID, TIMER_REPAINT_MS, NULL);
             break;
@@ -423,6 +781,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             DrawProc(hdcBack);        
             
             BitBlt(dc, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, hdcBack, 0, 0, SRCCOPY);
+            
             EndPaint(hWnd, &ps);
             
             fps.frames++;
@@ -453,6 +812,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             translViewPort[7] = scaleY;
 
             pBytes = realloc(pBytes, bmi.bmiHeader.biSizeImage);
+            zBuffer = realloc(zBuffer, bmp.bmHeight * bmp.bmWidth * sizeof(double));
             break;
         case WM_LBUTTONDOWN: 
             ptMousePrev.x = GET_X_LPARAM(lParam);
@@ -468,8 +828,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 int xMousePos = GET_X_LPARAM(lParam);
                 int yMousePos = GET_Y_LPARAM(lParam);
 
-                angleThetha += (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
+                angleThetha -= (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
                 anglePhi += (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI;            
+
+                gsl_vector_set_zero(target);
+                eye->data[0] = destR * sin(angleThetha) * cos(anglePhi);
+                eye->data[1] = destR * cos(angleThetha); 
+                eye->data[2] = destR * sin(angleThetha) * sin(anglePhi);
+                // ApplyMatrix(eye, MT_Y_ROTATE, 0, 0, 0, -(xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI);
+                // ApplyMatrix(eye, MT_X_ROTATE, 0, 0, 0, -(yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI);
 
                 ptMousePrev.x = xMousePos;
                 ptMousePrev.y = yMousePos;
@@ -498,6 +865,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             break;
         case WM_DESTROY:
+            ExitProcess(0); //fix
             FreeAllResources();
             FinalizeBuffer(&hdcBack, &hbmBack);
             PostQuitMessage(0);
@@ -530,7 +898,7 @@ int WINAPI ModelStart(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 
     fps.out = tcsFpsInfo;
     fps.lastTime = GetTickCount();
-
+    
     while (GetMessage(&msg, NULL, 0, 0))
     {
         DispatchMessage(&msg);
