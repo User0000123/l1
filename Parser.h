@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "DArray.h"
 
-#define PARSER_MAX_STRING_LENGTH        100
+#define PARSER_MAX_STRING_LENGTH        150
 #define PARSER_EMPTY_DELIMETER          ""
 #define PARSER_COMPONENTS_DELIMETER     " " 
 #define PARSER_COORDINATES_DELIMETER    "/"

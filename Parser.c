@@ -1,6 +1,8 @@
 #include <gsl/gsl_vector.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include <ctype.h>
 
 #include "DArray.h"
 #include "Parser.h"
@@ -126,8 +128,7 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     isVtExists = strnlen_s(token, PARSER_MAX_STRING_LENGTH) != 0;
 
     if (isVtExists)
-    {
-        
+    { 
         pVectorTextures->data[0] = atoi(token);
     } 
     
@@ -160,7 +161,18 @@ void parcePolygon(ObjFile *pObjFile, char *string)
         }
     }
 
-    Add(pObjFile->fv, pVectorVerteces);
+    int k = dimensionality;
+    while (k > 2)
+    {
+        gsl_vector_int *temp = gsl_vector_int_calloc(3);
+        temp->data[0] = pVectorVerteces->data[0];
+        temp->data[1] = pVectorVerteces->data[k-2];
+        temp->data[2] = pVectorVerteces->data[k-1];
+
+        k--;
+        Add(pObjFile->fv, temp);
+    }
+    // Add(pObjFile->fv, pVectorVerteces);
     
     if (isVtExists)
     {
@@ -189,32 +201,41 @@ ObjFile *parseOBJ(FILE *stream)
     InitializeObjFileInfo(pObjFile);
 
     char string[PARSER_MAX_STRING_LENGTH];
-    char *token;
+    char *token, *ts;
 
     while (!feof(stream))
     {
         fgets(string, PARSER_MAX_STRING_LENGTH, stream);
         token = strtok(string, PARSER_COMPONENTS_DELIMETER);
 
+        ts = token + strlen(token) + 1;
+        while(isspace((unsigned char)*ts)) ts++;
+        char *end = ts + strlen(ts) - 1;
+        while(end > ts && isspace((unsigned char)*end)) 
+        {
+            *end = 0;
+            end--;
+        }
+
         if (strcmp(token, "v") == 0)
         {   
-            Add(pObjFile->v, vParce(token + strlen(token) + 1));
+            Add(pObjFile->v, vParce(ts));
         }
         else if (strcmp(token, "vn") == 0)
         {
-            Add(pObjFile->vn, vSParce(token + strlen(token) + 1));
+            Add(pObjFile->vn, vSParce(ts));
         }
         else if (strcmp(token, "vt") == 0)
         {
-            Add(pObjFile->vt, vSParce(token + strlen(token) + 1));
+            Add(pObjFile->vt, vSParce(ts));
         }
         else if (strcmp(token, "vp") == 0)
         {
-            Add(pObjFile->vp, vSParce(token + strlen(token) + 1));
+            Add(pObjFile->vp, vSParce(ts));
         }
         else if (strcmp(token, "f") == 0)
         {
-            parcePolygon(pObjFile, token + strlen(token) + 1);
+            parcePolygon(pObjFile, ts);
         }
     }
 

@@ -1,5 +1,6 @@
 #define UNICODE
 #define _UNICODE
+#define _WIN32_WINNT_WIN10
 
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_math.h>
@@ -21,8 +22,11 @@
 #define APPLICATION_NAME    _TEXT("3D Model")
 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj" 
-#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
+// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
+#define PTH_OBJ_FILE        "C:\\test.obj" 
+// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\the-billiards-room\\source\\{E92F06F9-2FE5-440C-80A3-14D7B6C23206}\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
+// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj" 
 
 #define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
 #define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
@@ -79,7 +83,7 @@ gsl_vector *up;
 gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
-DOUBLE destR =          2;
+DOUBLE destR =          100;
 DOUBLE angleThetha =    M_PI_2;
 DOUBLE anglePhi =       M_PI_2;
 
@@ -102,9 +106,9 @@ gsl_vector *pResult;
 byte keys[255];
 
     /* Multithreading */
-#define N_QUEUE_MAX_SIZE    100
-#define N_THREADS           6
-#define N_PARAMS            6
+#define N_QUEUE_MAX_SIZE    10000
+#define N_THREADS           30
+#define N_PARAMS            10
 HTHDPOOL hPool;
 typedef struct {
     HDC dc;
@@ -120,6 +124,11 @@ typedef struct {
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
 HANDLE hTaskExecutedEvent;
+
+PTP_POOL pThreadPool;
+TP_CALLBACK_ENVIRON tpCBEnvironment;
+PTP_CLEANUP_GROUP tpCUGroup;
+volatile LONG count;
 
     /* Arrays for wrapper matrices */
 double translViewPort[] = 
@@ -244,8 +253,14 @@ void InitializeResources()
 
     tcsFpsInfo = calloc(FPS_OUT_MAX_LENGTH, sizeof(TCHAR));
 
-    hPool = CreateThreadPool(N_QUEUE_MAX_SIZE, N_THREADS);
-    hTaskExecutedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    // hPool = CreateThreadPool(N_QUEUE_MAX_SIZE, N_THREADS);
+    // hTaskExecutedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    pThreadPool = CreateThreadpool(NULL);
+    SetThreadpoolThreadMaximum(pThreadPool, 500);
+    SetThreadpoolThreadMinimum(pThreadPool, N_THREADS);
+    InitializeThreadpoolEnvironment(&tpCBEnvironment);
+    tpCUGroup = CreateThreadpoolCleanupGroup();
+    SetThreadpoolCallbackCleanupGroup(&tpCBEnvironment, tpCUGroup, NULL);
 
     light = gsl_vector_calloc(4);
 
@@ -357,9 +372,27 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
     gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
     gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1);
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
-    if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1])
+    {
+        SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1);
+        // int temp = pTriangleVertices->data[0];
+        // pTriangleVertices->data[0] = pTriangleVertices->data[1];
+        // pTriangleVertices->data[1] = temp;
+    }
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) 
+    {
+        SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
+        // int temp = pTriangleVertices->data[0];
+        // pTriangleVertices->data[0] = pTriangleVertices->data[2];
+        // pTriangleVertices->data[2] = temp;
+    }
+    if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) 
+    {
+        SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
+        // int temp = pTriangleVertices->data[1];
+        // pTriangleVertices->data[1] = pTriangleVertices->data[2];
+        // pTriangleVertices->data[2] = temp;
+    }
 
     for (int i = 0; i < 2; i++)
     {
@@ -403,7 +436,13 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
         pThreadParams->pB->data[1] = round(pThreadParams->pB->data[1]);
 
         int offset;
-        if (pThreadParams->pA->data[0] >pThreadParams-> pB->data[0]) SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
+        if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) 
+        {
+            SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
+            // int temp = pTriangleVertices->data[1];
+            // pTriangleVertices->data[1] = pTriangleVertices->data[2];
+            // pTriangleVertices->data[2] = temp;
+        }
         for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++) {
             if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
             float phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (float)(j-pThreadParams->pA->data[0])/(float)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]);
@@ -447,7 +486,31 @@ void SetFullScreen(HWND hwnd)
     }
 }
 
-void task(LPVOID params)
+// void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
+// {
+//     PARAMS *param = (PARAMS *) params;
+//     for (int i = param->from; i < param->to; i++)
+//     {
+//         gsl_vector_int *pVector = pObjFile->fv->data[i];
+//         gsl_vector *pV1, *pV2;
+
+//         for (int j = 0; j < pVector->size - 1; j++)
+//         {
+//             pV1 = gvPaintVertices[pVector->data[j]];
+//             pV2 = gvPaintVertices[pVector->data[j + 1]];
+
+//             DrawLine(param->dc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
+//         }       
+//         pV1 = gvPaintVertices[pVector->data[0]];
+//         pV2 = gvPaintVertices[pVector->data[pVector->size - 1]];         
+//         DrawLine(param->dc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
+//     }
+//     // SetEvent(hTaskExecutedEvent);
+//     InterlockedAdd(&count, 1);
+//     // EnterSynchronizationBarrier(&sb, NULL);
+// }
+
+void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
 {
     PARAMS *param = (PARAMS *) params;
     for (int i = param->from; i < param->to; i++)
@@ -457,6 +520,15 @@ void task(LPVOID params)
         gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
         gsl_vector_memcpy(param->pV1, gvWorldVertices[pVector->data[1]]);
         gsl_vector_memcpy(param->pV2, gvWorldVertices[pVector->data[2]]);
+        // param->pV0 = gvWorldVertices[pVector->data[0]];
+        // param->pV1 = gvWorldVertices[pVector->data[1]];
+        // param->pV2 = gvWorldVertices[pVector->data[2]];
+
+        // if (param->pV0->data[1] > param->pV1->data[1]) SWAP_VECTORS(param->pV0, param->pV1);
+        // if (param->pV0->data[1] > param->pV2->data[1]) SWAP_VECTORS(param->pV0, param->pV2);
+        // if (param->pV1->data[1] > param->pV2->data[1]) SWAP_VECTORS(param->pV1, param->pV2);
+
+        // if (param->pV1->data[0] > param->pV2->data[0]) SWAP_VECTORS(param->pV1, param->pV2);                 
 
         gsl_vector_memcpy(param->pA, param->pV1);
         gsl_vector_sub(param->pA, param->pV0);
@@ -464,18 +536,21 @@ void task(LPVOID params)
         gsl_vector_memcpy(param->pB, param->pV2);
         gsl_vector_sub(param->pB, param->pV0);
 
-        vector_cross_product3(param->pB, param->pA, param->norm);
-        gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
         double intens;
+        vector_cross_product3(param->pB, param->pA, param->norm);
+        // gsl_blas_ddot(param->pB, param->norm, &intens);
+        gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
         gsl_blas_ddot(light, param->norm, &intens); 
 
         if (intens > 0)
         {
             DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
         }
+        // DrawTriangle(param, param->dc, pVector, 255, 255, 255);
     }
-
-    SetEvent(hTaskExecutedEvent);
+    
+    InterlockedAdd(&count, 1);
+    // SetEvent(hTaskExecutedEvent);
 }
 
 void DrawProc(HDC hdc)
@@ -488,36 +563,47 @@ void DrawProc(HDC hdc)
     
     for (int i = 0; i < bmp.bmWidth * bmp.bmHeight; i++)
     {
-        zBuffer[i] = 10;
+        zBuffer[i] = 100;
     }
     gsl_vector_memcpy(light, target);
     gsl_vector_sub(light, eye);
     gsl_vector_scale(light, 1.0 / gsl_blas_dnrm2(light));
 
+    PTP_WORK work;
     int delta = pObjFile->fv->nCurSize / N_PARAMS;
     params[0].from = 1;
     params[0].to = delta;
     params[0].dc = hdc;
-    SubmitTask(hPool, task, params);
+
+    // SubmitTask(hPool, task, params);
+    work = CreateThreadpoolWork(task, params, &tpCBEnvironment);
+    SubmitThreadpoolWork(work);
     for (int i = 1; i < N_PARAMS - 1; i++)
     {
         params[i].from = params[i - 1].to;
         params[i].to = params[i].from + delta;
         params[i].dc = hdc;
-        SubmitTask(hPool, task, params + i);
+        work = CreateThreadpoolWork(task, params + i, &tpCBEnvironment);
+        SubmitThreadpoolWork(work);
+        // SubmitTask(hPool, task, params + i);
     }
     params[N_PARAMS - 1].from = params[N_PARAMS - 2].to;
     params[N_PARAMS - 1].to = pObjFile->fv->nCurSize;
     params[N_PARAMS - 1].dc = hdc;
-    SubmitTask(hPool, task, params + N_PARAMS - 1);
+    work = CreateThreadpoolWork(task, params + N_PARAMS - 1, &tpCBEnvironment);
+    SubmitThreadpoolWork(work);
+    // SubmitTask(hPool, task, params + N_PARAMS - 1);
     
     // waiting for all threads finish drawing
-    while (GetExecutedTasksCount(hPool) < N_PARAMS)
+    while (count < N_PARAMS)
     {
-        WaitForSingleObject(hTaskExecutedEvent, INFINITE);
     }
+    count = 0;
+    CloseThreadpoolCleanupGroupMembers(tpCUGroup,
+                                       FALSE,
+                                       &tpCBEnvironment);
 
-    SetExecutedTasksCount(hPool, 0);
+    // SetExecutedTasksCount(hPool, 0);
     
     SetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
 
@@ -586,7 +672,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case WM_TIMER:
             MoveProc();
             ApplyTransformations();
-            InvalidateRect(hWnd, NULL, FALSE);
+            // InvalidateRect(hWnd, NULL, FALSE);
             break;
         case WM_PAINT:
             HDC dc;
@@ -715,10 +801,20 @@ int WINAPI ModelStart(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
     fps.out = tcsFpsInfo;
     fps.lastTime = GetTickCount();
     
-    while (GetMessage(&msg, NULL, 0, 0))
+    // while (GetMessage(&msg, NULL, 0, 0))
+    // {
+    //     DispatchMessage(&msg);
+    //     fpsLOG();
+    // }
+
+    for (;;)
     {
-        DispatchMessage(&msg);
+        while(PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+        {
+            DispatchMessage(&msg);
+        }
         fpsLOG();
+        InvalidateRect(hwndMainWindow, NULL, FALSE);
     }
 
     return (int) msg.wParam;

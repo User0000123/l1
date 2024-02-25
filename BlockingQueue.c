@@ -13,7 +13,7 @@ typedef struct {
     PTQELEMENT head;
     PTQELEMENT tail;
     int queueMaxLength;
-    int queueCurrentLength;
+    volatile int queueCurrentLength;
     CRITICAL_SECTION csBufferLock;
     CONDITION_VARIABLE cvBufferNotFull;
     CONDITION_VARIABLE cvBufferNotEmpty;
@@ -65,7 +65,7 @@ HBLOCKQUEUE CreateQueue(int nQueueMaxElements)
     if (pQueue != NULL) 
     {
         pQueue->queueMaxLength = nQueueMaxElements;
-        InitializeCriticalSectionAndSpinCount(&pQueue->csBufferLock, 5000);
+        InitializeCriticalSectionAndSpinCount(&pQueue->csBufferLock, 10000);
         InitializeConditionVariable(&pQueue->cvBufferNotFull);
         InitializeConditionVariable(&pQueue->cvBufferNotEmpty);
     }
@@ -105,7 +105,7 @@ BOOL Append(HBLOCKQUEUE hConQueue, LPVOID data)
          
         while (pQueue->queueCurrentLength == pQueue->queueMaxLength)
         {
-            SleepConditionVariableCS(&pQueue->cvBufferNotFull, &pQueue->csBufferLock, 1);
+            SleepConditionVariableCS(&pQueue->cvBufferNotFull, &pQueue->csBufferLock, 0);
         }
         
         enqueue(pQElement, pQueue);
@@ -131,7 +131,7 @@ BOOL Remove(HBLOCKQUEUE hConQueue, LPVOID* buffer)
 
     while (pQueue->queueCurrentLength == 0) 
     {
-        SleepConditionVariableCS(&pQueue->cvBufferNotFull, &pQueue->csBufferLock, 1);
+        SleepConditionVariableCS(&pQueue->cvBufferNotFull, &pQueue->csBufferLock, 0);
     } 
 
     if (buffer != NULL) 
