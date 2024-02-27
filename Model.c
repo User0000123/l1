@@ -83,7 +83,7 @@ gsl_vector *up;
 gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
-DOUBLE destR =          100;
+DOUBLE destR =          10;
 DOUBLE angleThetha =    M_PI_2;
 DOUBLE anglePhi =       M_PI_2;
 
@@ -92,6 +92,7 @@ gsl_vector *light;
 
     /* Z buffer */
 double *zBuffer;
+byte *pIsDrawable;
 
     /* Model transformation matrices */
 gsl_matrix *matrixTransformation;
@@ -163,6 +164,13 @@ inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *re
     result->data[2] = v1->data[0] * v2->data[1] - v1->data[1] * v2->data[0]; 
 }
 
+inline int isInside(gsl_vector *pPoint)
+{
+    return ((pPoint->data[0] > -pPoint->data[3] && pPoint->data[0] < pPoint->data[3]) && 
+        (pPoint->data[1] > -pPoint->data[3] && pPoint->data[1] < pPoint->data[3]) &&
+        (pPoint->data[2] > 0 && pPoint->data[2] < pPoint->data[3]));
+}
+
 void ApplyTransformations()
 {
     memcpy(gbPaintVertices->data, gbWorldVertices->data, sizeof(double) * gbPaintVertices->size);
@@ -195,9 +203,10 @@ void ApplyTransformations()
     ///////////////////////////////////////////////
     
     // Creation global transformation matrix
-    gsl_matrix_memcpy(matrixTransformation, &matrixViewPort);
+    // gsl_matrix_memcpy(matrixTransformation, &matrixViewPort);
+    gsl_matrix_memcpy(matrixTransformation, &matrixProjection);
 
-    MatrixMult(matrixTransformation, &matrixProjection);
+    // MatrixMult(matrixTransformation, &matrixProjection);
     MatrixMult(matrixTransformation, &matrixView);
     // Also, there may be multiplication by the tranformation matix 
     ////////
@@ -207,8 +216,14 @@ void ApplyTransformations()
         gsl_vector *pVector = gvPaintVertices[i];
 
         gsl_blas_dgemv(CblasNoTrans, 1.0, matrixTransformation, pVector, 0, pResult);
-        gsl_vector_memcpy(pVector, pResult);
-        gsl_vector_scale(pVector, 1.0 / gsl_vector_get(pVector, 3));
+        
+        if (pIsDrawable[i] = isInside(pResult))
+        {
+            gsl_vector_memcpy(pVector, pResult);
+            gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
+            gsl_vector_memcpy(pVector, pResult);
+            gsl_vector_scale(pVector, 1.0 / gsl_vector_get(pVector, 3));
+        }
     }
 }
 
@@ -249,6 +264,8 @@ void InitializeResources()
         gsl_vector_memcpy(gvWorldVertices[i], pObjFile->v->data[i]);
     }
     
+    pIsDrawable = calloc(pObjFile->v->nCurSize + 1, sizeof(byte));
+
     ApplyTransformations();
 
     tcsFpsInfo = calloc(FPS_OUT_MAX_LENGTH, sizeof(TCHAR));
@@ -309,6 +326,7 @@ void FreeAllResources()
 
     free(pBytes);
     free(zBuffer);
+    free(pIsDrawable);
 
     DestroyObjFileInfo(pObjFile);
     fclose(objFile);
@@ -368,31 +386,15 @@ inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1)
 
 inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangleVertices, byte r, byte g, byte b)
 {
+    if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
+
     gsl_vector_memcpy(pThreadParams->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
     gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
     gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1])
-    {
-        SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1);
-        // int temp = pTriangleVertices->data[0];
-        // pTriangleVertices->data[0] = pTriangleVertices->data[1];
-        // pTriangleVertices->data[1] = temp;
-    }
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) 
-    {
-        SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
-        // int temp = pTriangleVertices->data[0];
-        // pTriangleVertices->data[0] = pTriangleVertices->data[2];
-        // pTriangleVertices->data[2] = temp;
-    }
-    if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) 
-    {
-        SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
-        // int temp = pTriangleVertices->data[1];
-        // pTriangleVertices->data[1] = pTriangleVertices->data[2];
-        // pTriangleVertices->data[2] = temp;
-    }
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1);
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
+    if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
 
     for (int i = 0; i < 2; i++)
     {
@@ -436,13 +438,7 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
         pThreadParams->pB->data[1] = round(pThreadParams->pB->data[1]);
 
         int offset;
-        if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) 
-        {
-            SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
-            // int temp = pTriangleVertices->data[1];
-            // pTriangleVertices->data[1] = pTriangleVertices->data[2];
-            // pTriangleVertices->data[2] = temp;
-        }
+        if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
         for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++) {
             if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
             float phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (float)(j-pThreadParams->pA->data[0])/(float)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]);
@@ -510,6 +506,44 @@ void SetFullScreen(HWND hwnd)
 //     // EnterSynchronizationBarrier(&sb, NULL);
 // }
 
+// gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
+        // gsl_vector_memcpy(param->pV1, gvWorldVertices[pVector->data[1]]);
+        // gsl_vector_memcpy(param->pV2, gvWorldVertices[pVector->data[2]]);          
+
+        // gsl_vector_memcpy(param->pA, param->pV1);
+        // gsl_vector_sub(param->pA, param->pV0);
+        // gsl_vector_memcpy(param->pB, param->pV2);
+        // gsl_vector_sub(param->pB, param->pV0);
+
+        // double intens;
+        // vector_cross_product3(param->pB, param->pA, param->norm);
+
+        // gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
+        // gsl_blas_ddot(light, param->norm, &intens); 
+
+        // if (intens > 0)
+        // {
+        //     DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
+        // }
+        // DrawTriangle(param, param->dc, pVector, 255, 255, 255);
+
+void flatShading(int index, PARAMS *param, double *intens)
+{
+    double global_intens = 0;
+    double result;
+    gsl_vector_int *pVector = pObjFile->fvn->data[index];
+
+    for (int i = 0; i < 3; i++)
+    {
+        gsl_vector_memcpy(param->pV0, pObjFile->vn->data[pVector->data[i]]);
+        gsl_blas_ddot(param->pV0, light, &result);
+
+        global_intens -= result;
+    }
+
+    *intens = global_intens / 3.0;
+}
+
 void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
 {
     PARAMS *param = (PARAMS *) params;
@@ -517,36 +551,13 @@ void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
     {
         gsl_vector_int *pVector = pObjFile->fv->data[i];
 
-        gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
-        gsl_vector_memcpy(param->pV1, gvWorldVertices[pVector->data[1]]);
-        gsl_vector_memcpy(param->pV2, gvWorldVertices[pVector->data[2]]);
-        // param->pV0 = gvWorldVertices[pVector->data[0]];
-        // param->pV1 = gvWorldVertices[pVector->data[1]];
-        // param->pV2 = gvWorldVertices[pVector->data[2]];
-
-        // if (param->pV0->data[1] > param->pV1->data[1]) SWAP_VECTORS(param->pV0, param->pV1);
-        // if (param->pV0->data[1] > param->pV2->data[1]) SWAP_VECTORS(param->pV0, param->pV2);
-        // if (param->pV1->data[1] > param->pV2->data[1]) SWAP_VECTORS(param->pV1, param->pV2);
-
-        // if (param->pV1->data[0] > param->pV2->data[0]) SWAP_VECTORS(param->pV1, param->pV2);                 
-
-        gsl_vector_memcpy(param->pA, param->pV1);
-        gsl_vector_sub(param->pA, param->pV0);
-
-        gsl_vector_memcpy(param->pB, param->pV2);
-        gsl_vector_sub(param->pB, param->pV0);
-
         double intens;
-        vector_cross_product3(param->pB, param->pA, param->norm);
-        // gsl_blas_ddot(param->pB, param->norm, &intens);
-        gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
-        gsl_blas_ddot(light, param->norm, &intens); 
+        flatShading(i, param, &intens);
 
         if (intens > 0)
         {
             DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
         }
-        // DrawTriangle(param, param->dc, pVector, 255, 255, 255);
     }
     
     InterlockedAdd(&count, 1);

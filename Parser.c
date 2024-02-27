@@ -67,7 +67,7 @@ void* vParce(char *string)
 void* vSParce(char *string)
 {
     _CRT_DOUBLE dbval;
-    gsl_vector *pVector = gsl_vector_calloc(3);
+    gsl_vector *pVector = gsl_vector_calloc(4);
     char *token;
     int index = 0;
 
@@ -176,7 +176,18 @@ void parcePolygon(ObjFile *pObjFile, char *string)
     
     if (isVtExists)
     {
-        Add(pObjFile->fvt, pVectorTextures);
+        k = dimensionality;
+        while (k > 2)
+        {
+            gsl_vector_int *temp = gsl_vector_int_calloc(3);
+            temp->data[0] = pVectorTextures->data[0];
+            temp->data[1] = pVectorTextures->data[k-2];
+            temp->data[2] = pVectorTextures->data[k-1];
+
+            k--;
+            Add(pObjFile->fvt, temp);
+        }
+        // Add(pObjFile->fvt, pVectorTextures);
     }
     else
     {
@@ -185,7 +196,18 @@ void parcePolygon(ObjFile *pObjFile, char *string)
 
     if (isVnExists)
     {
-        Add(pObjFile->fvn, pVectorNormals);
+        k = dimensionality;
+        while (k > 2)
+        {
+            gsl_vector_int *temp = gsl_vector_int_calloc(3);
+            temp->data[0] = pVectorNormals->data[0];
+            temp->data[1] = pVectorNormals->data[k-2];
+            temp->data[2] = pVectorNormals->data[k-1];
+
+            k--;
+            Add(pObjFile->fvn, temp);
+        }
+        // Add(pObjFile->fvn, pVectorNormals);
     }
     else
     {
