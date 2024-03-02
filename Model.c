@@ -22,8 +22,8 @@
 #define APPLICATION_NAME    _TEXT("3D Model")
 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj" 
-// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
-#define PTH_OBJ_FILE        "C:\\test.obj" 
+#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
+// #define PTH_OBJ_FILE        "C:\\test.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\the-billiards-room\\source\\{E92F06F9-2FE5-440C-80A3-14D7B6C23206}\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj" 
@@ -42,7 +42,7 @@
 DOUBLE CAMERA_VIEW_WIDTH =  2;
 DOUBLE CAMERA_VIEW_HEIGHT = 2;
 #define Z_NEAR              1
-#define Z_FAR               10
+#define Z_FAR               5
 
     /* Graphic window */
 HWND hwndMainWindow;
@@ -55,6 +55,7 @@ HBITMAP hbmBack;
 
     /* Screen bitmap */
 BITMAPINFO bmi;
+HBRUSH hbrBackground;
 BITMAP bmp;
 byte *pBytes;
 
@@ -83,7 +84,7 @@ gsl_vector *up;
 gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
-DOUBLE destR =          10;
+DOUBLE destR =          2;
 DOUBLE angleThetha =    M_PI_2;
 DOUBLE anglePhi =       M_PI_2;
 
@@ -92,6 +93,7 @@ gsl_vector *light;
 
     /* Z buffer */
 double *zBuffer;
+CRITICAL_SECTION *zBufferCS;
 byte *pIsDrawable;
 
     /* Model transformation matrices */
@@ -109,7 +111,7 @@ byte keys[255];
     /* Multithreading */
 #define N_QUEUE_MAX_SIZE    10000
 #define N_THREADS           30
-#define N_PARAMS            10
+#define N_PARAMS            6
 HTHDPOOL hPool;
 typedef struct {
     HDC dc;
@@ -144,7 +146,7 @@ double translProjection[] =
     {
         2.0 * Z_NEAR / 2.0, 0, 0, 0, 
         0, 2.0 * Z_NEAR / 2.0, 0, 0,
-        0, 0, Z_FAR / (Z_NEAR - Z_FAR), Z_NEAR * Z_FAR / (Z_NEAR - Z_FAR),
+        0, 0, (double) Z_FAR / (Z_NEAR - Z_FAR), (double) Z_NEAR * Z_FAR / (Z_NEAR - Z_FAR),
         0, 0, -1, 0
     };
 
@@ -291,6 +293,8 @@ void InitializeResources()
         params[i].pP = gsl_vector_calloc(4);
         params[i].norm = gsl_vector_calloc(4);
     }
+
+    hbrBackground = CreateSolidBrush(RGB(255, 0, 0));
 }
 
 void FreeAllResources()
@@ -332,9 +336,11 @@ void FreeAllResources()
     fclose(objFile);
     FinalizeMatrixTrans();
     KillTimer(hwndMainWindow, TIMER_REPAINT_ID);
+    
+    DeleteObject(hbrBackground);
 }
 
-inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1)
+inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1, byte r, byte g, byte b)
 {
     BOOL isTranspose = FALSE;
 
@@ -369,9 +375,9 @@ inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1)
         {
             offset = (x * bmWidth + y) << 2;
         }
-        pBytes[offset + 0] = 255;
-        pBytes[offset + 1] = 255;
-        pBytes[offset + 2] = 255;
+        pBytes[offset + 0] = r;
+        pBytes[offset + 1] = g;
+        pBytes[offset + 2] = b;
         // InterlockedOr((long *)(pBytes + offset), 0x00FFFFFF);
 
         error += derror;
@@ -409,8 +415,8 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
     for (int i=0; i<total_height; i++) {
         BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
         int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
-        float alpha = (float) i / total_height;
-        float beta  = (float) (i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
+        double alpha = (double) i / total_height;
+        double beta  = (double) (i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
         
         gsl_vector_memcpy(pThreadParams->pA, pThreadParams->pV2);
         gsl_vector_sub(pThreadParams->pA, pThreadParams->pV0);
@@ -439,9 +445,10 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
 
         int offset;
         if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
-        for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++) {
+        // pThreadParams->pA->data[0] += 1;
+        for (int j = pThreadParams->pA->data[0]+1; j <= pThreadParams->pB->data[0]; j++) {
             if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
-            float phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (float)(j-pThreadParams->pA->data[0])/(float)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]);
+            double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j-pThreadParams->pA->data[0])/(double)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]+1);
             gsl_vector_memcpy(pThreadParams->pP, pThreadParams->pB);
             gsl_vector_sub(pThreadParams->pP, pThreadParams->pA);
             gsl_vector_scale(pThreadParams->pP, phi);
@@ -449,6 +456,8 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
 
             offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
             int idx = j+(pThreadParams->pV0->data[1] + i)*bmp.bmWidth;
+            
+            EnterCriticalSection(zBufferCS + idx);
             if (zBuffer[idx] > pThreadParams->pP->data[2]) {
                 zBuffer[idx] = pThreadParams->pP->data[2];
 
@@ -456,6 +465,7 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
                 pBytes[offset + 1] = g;
                 pBytes[offset + 2] = b;   
             }
+            LeaveCriticalSection(zBufferCS+idx);
         }
     }
 }
@@ -551,24 +561,43 @@ void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
     {
         gsl_vector_int *pVector = pObjFile->fv->data[i];
 
-        double intens;
-        flatShading(i, param, &intens);
+        // double intens;
+        // flatShading(i, param, &intens);
+        gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
+        gsl_vector_memcpy(param->pV1, gvWorldVertices[pVector->data[1]]);
+        gsl_vector_memcpy(param->pV2, gvWorldVertices[pVector->data[2]]);          
 
-        if (intens > 0)
-        {
-            DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
-        }
+        gsl_vector_memcpy(param->pA, param->pV1);
+        gsl_vector_sub(param->pA, param->pV0);
+        gsl_vector_memcpy(param->pB, param->pV2);
+        gsl_vector_sub(param->pB, param->pV0);
+
+        double intens;
+        vector_cross_product3(param->pB, param->pA, param->norm);
+
+        gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
+        gsl_vector_sub(param->pV0, eye);
+        gsl_vector_scale(param->pV0, 1.0 / gsl_blas_dnrm2(param->pV0));
+        gsl_blas_ddot(param->pV0, param->norm, &intens); 
+
+        // if (intens > 0)
+        // {
+        //     DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
+        // }
+        // DrawTriangle(param, param->dc, pVector, 255, 255, 255);
+        intens = max(0, intens);
+
+        DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
     }
     
     InterlockedAdd(&count, 1);
-    // SetEvent(hTaskExecutedEvent);
 }
 
 void DrawProc(HDC hdc)
 {
     SaveDC(hdc);
             
-    FillRect(hdc, &rcClient, GetStockBrush(BACKGROUND_BRUSH));
+    FillRect(hdc, &rcClient, hbrBackground);
 
     GetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
     
@@ -614,7 +643,6 @@ void DrawProc(HDC hdc)
                                        FALSE,
                                        &tpCBEnvironment);
 
-    // SetExecutedTasksCount(hPool, 0);
     
     SetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
 
@@ -728,6 +756,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             pBytes = realloc(pBytes, bmi.bmiHeader.biSizeImage);
             zBuffer = realloc(zBuffer, bmp.bmHeight * bmp.bmWidth * sizeof(double));
+            zBufferCS = realloc(zBufferCS, bmp.bmHeight * bmp.bmWidth * sizeof(CRITICAL_SECTION));
+            for (int i = 0; i < bmp.bmHeight * bmp.bmWidth; i++)
+            {
+                InitializeCriticalSectionAndSpinCount(zBufferCS + i, 2000);
+            }
             break;
         case WM_LBUTTONDOWN: 
             ptMousePrev.x = GET_X_LPARAM(lParam);
