@@ -22,11 +22,12 @@
 #define APPLICATION_NAME    _TEXT("3D Model")
 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj" 
-#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
+//#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\test.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\the-billiards-room\\source\\{E92F06F9-2FE5-440C-80A3-14D7B6C23206}\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
-// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj" 
+// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj"
+ #define PTH_OBJ_FILE        "Model\\model.obj"
 
 #define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
 #define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
@@ -124,6 +125,13 @@ typedef struct {
     gsl_vector *pB;
     gsl_vector *pP;
     gsl_vector *norm;
+		gsl_vector *pVN0;
+		gsl_vector *pVN1;
+		gsl_vector *pVN2;
+		gsl_vector *pAN;
+    gsl_vector *pBN;
+    gsl_vector *pPN;
+		gsl_vector *pLight;
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
 HANDLE hTaskExecutedEvent;
@@ -292,6 +300,13 @@ void InitializeResources()
         params[i].pB = gsl_vector_calloc(4);
         params[i].pP = gsl_vector_calloc(4);
         params[i].norm = gsl_vector_calloc(4);
+				params[i].pVN0 = gsl_vector_calloc(4);
+        params[i].pVN1 = gsl_vector_calloc(4); 
+        params[i].pVN2 = gsl_vector_calloc(4);
+				params[i].pAN = gsl_vector_alloc(4);
+				params[i].pBN = gsl_vector_alloc(4);
+				params[i].pPN = gsl_vector_alloc(4);
+				params[i].pLight = gsl_vector_alloc(4);
     }
 
     hbrBackground = CreateSolidBrush(RGB(255, 0, 0));
@@ -390,6 +405,16 @@ inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1, byte r, byte g, byt
     }
 }
 
+/**
+ * @brief 
+ * 
+ * @param pThreadParams 
+ * @param dc 
+ * @param pTriangleVertices Sequence numbers of vertexes in vertexes coordinates array from .obj @see gvPaintVertices
+ * @param r 
+ * @param g 
+ * @param b 
+ */
 inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangleVertices, byte r, byte g, byte b)
 {
     if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
@@ -398,7 +423,7 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
     gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
     gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1);
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1); //<!-- gsl_vactor_swap exists 
     if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
     if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
 
@@ -408,7 +433,7 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
         pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
         pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
     }
-    if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return;
+    if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return; //<!-- realy need this? it is validation of .obj file actually
 
     int total_height = pThreadParams->pV2->data[1] - pThreadParams->pV0->data[1];
 
@@ -470,72 +495,127 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
     }
 }
 
-void SetFullScreen(HWND hwnd)
-{
-    DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
-    
-    if (dwStyle & WS_OVERLAPPEDWINDOW) {
-        MONITORINFO mi = { sizeof(mi) };
-
-        if (GetWindowPlacement(hwnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hwnd,MONITOR_DEFAULTTOPRIMARY), &mi)) 
-        {
-            SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
-            SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
-                        SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-        }
-    } else {
-        SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
-        SetWindowPlacement(hwnd, &g_wpPrev);
-        SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-                    SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-    }
+void calculateNormal(gsl_vector* first, gsl_vector* second, double scale, gsl_vector* result) {
+		gsl_vector_memcpy(result, second);
+		gsl_vector_sub(result, first);
+		gsl_vector_scale(result, scale);
+		gsl_vector_add(result, first);
+		gsl_vector_scale(result, 1.0 / gsl_blas_dnrm2(result));
 }
 
-// void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
-// {
-//     PARAMS *param = (PARAMS *) params;
-//     for (int i = param->from; i < param->to; i++)
-//     {
-//         gsl_vector_int *pVector = pObjFile->fv->data[i];
-//         gsl_vector *pV1, *pV2;
+void calculateSideScanlinePoints(PARAMS *pThreadParams, double alpha, BOOL second_half, double beta) {
+		gsl_vector_memcpy(pThreadParams->pA, pThreadParams->pV2);
+		gsl_vector_sub(pThreadParams->pA, pThreadParams->pV0);
+		gsl_vector_scale(pThreadParams->pA, alpha);
+		gsl_vector_add(pThreadParams->pA, pThreadParams->pV0);
 
-//         for (int j = 0; j < pVector->size - 1; j++)
-//         {
-//             pV1 = gvPaintVertices[pVector->data[j]];
-//             pV2 = gvPaintVertices[pVector->data[j + 1]];
+		calculateNormal(pThreadParams->pVN0, pThreadParams->pVN2, alpha, pThreadParams->pAN);
 
-//             DrawLine(param->dc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
-//         }       
-//         pV1 = gvPaintVertices[pVector->data[0]];
-//         pV2 = gvPaintVertices[pVector->data[pVector->size - 1]];         
-//         DrawLine(param->dc, pV1->data[0], pV1->data[1], pV2->data[0], pV2->data[1]); 
-//     }
-//     // SetEvent(hTaskExecutedEvent);
-//     InterlockedAdd(&count, 1);
-//     // EnterSynchronizationBarrier(&sb, NULL);
-// }
+		if (second_half)
+		{
+				gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV2);
+				gsl_vector_sub(pThreadParams->pB, pThreadParams->pV1);
+				gsl_vector_scale(pThreadParams->pB, beta);
+				gsl_vector_add(pThreadParams->pB, pThreadParams->pV1);
+				calculateNormal(pThreadParams->pVN1, pThreadParams->pVN2, beta, pThreadParams->pBN);
+		}
+		else
+		{
+				gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV1);
+				gsl_vector_sub(pThreadParams->pB, pThreadParams->pV0);
+				gsl_vector_scale(pThreadParams->pB, beta);
+				gsl_vector_add(pThreadParams->pB, pThreadParams->pV0);
+				calculateNormal(pThreadParams->pVN0, pThreadParams->pVN1, beta, pThreadParams->pBN);
+		}
+}
 
-// gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
-        // gsl_vector_memcpy(param->pV1, gvWorldVertices[pVector->data[1]]);
-        // gsl_vector_memcpy(param->pV2, gvWorldVertices[pVector->data[2]]);          
+inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
+{
+		gsl_vector_int *pTriangleVertices = pObjFile->fv->data[index];
+    if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
 
-        // gsl_vector_memcpy(param->pA, param->pV1);
-        // gsl_vector_sub(param->pA, param->pV0);
-        // gsl_vector_memcpy(param->pB, param->pV2);
-        // gsl_vector_sub(param->pB, param->pV0);
+		/*CHANGES*/
+		gsl_vector_memcpy(pThreadParams->pVN0, pObjFile->vn->data[pTriangleVertices->data[0]]); //<!-- can be moved into resource initialization ferther
+		gsl_vector_memcpy(pThreadParams->pVN1, pObjFile->vn->data[pTriangleVertices->data[1]]); //<!-- can be moved into resource initialization ferther
+		gsl_vector_memcpy(pThreadParams->pVN2, pObjFile->vn->data[pTriangleVertices->data[2]]); //<!-- can be moved into resource initialization ferther
 
-        // double intens;
-        // vector_cross_product3(param->pB, param->pA, param->norm);
+    gsl_vector_memcpy(pThreadParams->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
+    gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
+    gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
-        // gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
-        // gsl_blas_ddot(light, param->norm, &intens); 
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) {
+			SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1); //<!-- gsl_vactor_swap exists
+			SWAP_VECTORS(pThreadParams->pVN0, pThreadParams->pVN1);
+		}
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) {
+			SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
+			SWAP_VECTORS(pThreadParams->pVN0, pThreadParams->pVN2);
+		}
+    if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) {
+			SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
+			SWAP_VECTORS(pThreadParams->pVN1, pThreadParams->pVN2);
+		}
 
-        // if (intens > 0)
-        // {
-        //     DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
-        // }
-        // DrawTriangle(param, param->dc, pVector, 255, 255, 255);
+    for (int i = 0; i < 2; i++)
+    {
+        pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
+        pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
+        pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
+    }
+    if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return; //<!-- realy need this? it is validation of .obj file actually
+
+    int total_height = pThreadParams->pV2->data[1] - pThreadParams->pV0->data[1];
+
+    for (int i=0; i<total_height; i++) {
+        BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
+        int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
+        double alpha = (double) i / total_height;
+        double beta  = (double) (i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
+        
+				calculateSideScanlinePoints(pThreadParams, alpha, second_half, beta);
+
+				for (int i = 0; i < 2; i++)
+				{
+						pThreadParams->pA->data[i] = round(pThreadParams->pA->data[i]);
+						pThreadParams->pB->data[i] = round(pThreadParams->pB->data[i]);
+				}
+
+        if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) {
+					 SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
+					 SWAP_VECTORS(pThreadParams->pAN, pThreadParams->pBN);
+				}
+
+				int offset;
+
+        for (int j = pThreadParams->pA->data[0]+1; j <= pThreadParams->pB->data[0]; j++) {
+            if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
+            double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j-pThreadParams->pA->data[0])/(double)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]+1);
+            gsl_vector_memcpy(pThreadParams->pP, pThreadParams->pB);
+            gsl_vector_sub(pThreadParams->pP, pThreadParams->pA);
+            gsl_vector_scale(pThreadParams->pP, phi);
+            gsl_vector_add(pThreadParams->pP, pThreadParams->pA);
+
+						calculateNormal(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN);
+
+            offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
+            int idx = j+(pThreadParams->pV0->data[1] + i)*bmp.bmWidth;
+            
+            EnterCriticalSection(zBufferCS + idx);
+            if (zBuffer[idx] > pThreadParams->pP->data[2]) {
+                zBuffer[idx] = pThreadParams->pP->data[2];
+
+								double intens;
+								gsl_blas_ddot(pThreadParams->pPN, pThreadParams->pLight, &intens);
+								intens = max(0, intens);
+
+                pBytes[offset + 0] = intens * 255;
+                pBytes[offset + 1] = intens * 255;
+                pBytes[offset + 2] = intens * 255;   
+            }
+            LeaveCriticalSection(zBufferCS+idx);
+        }
+    }
+}
 
 void flatShading(int index, PARAMS *param, double *intens)
 {
@@ -559,38 +639,40 @@ void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
     PARAMS *param = (PARAMS *) params;
     for (int i = param->from; i < param->to; i++)
     {
-        gsl_vector_int *pVector = pObjFile->fv->data[i];
+				gsl_vector_int *pVector = pObjFile->fv->data[i];
+				gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
 
-        // double intens;
-        // flatShading(i, param, &intens);
-        gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
-        gsl_vector_memcpy(param->pV1, gvWorldVertices[pVector->data[1]]);
-        gsl_vector_memcpy(param->pV2, gvWorldVertices[pVector->data[2]]);          
-
-        gsl_vector_memcpy(param->pA, param->pV1);
-        gsl_vector_sub(param->pA, param->pV0);
-        gsl_vector_memcpy(param->pB, param->pV2);
-        gsl_vector_sub(param->pB, param->pV0);
-
-        double intens;
-        vector_cross_product3(param->pB, param->pA, param->norm);
-
-        gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
+ 				gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
         gsl_vector_sub(param->pV0, eye);
-        gsl_vector_scale(param->pV0, 1.0 / gsl_blas_dnrm2(param->pV0));
-        gsl_blas_ddot(param->pV0, param->norm, &intens); 
+        gsl_vector_scale(param->pV0, -1.0 / gsl_blas_dnrm2(param->pV0));
 
-        // if (intens > 0)
-        // {
-        //     DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
-        // }
-        // DrawTriangle(param, param->dc, pVector, 255, 255, 255);
-        intens = max(0, intens);
-
-        DrawTriangle(param, param->dc, pVector, 255 * intens, 255 * intens, 255 * intens);
+				gsl_vector_memcpy(param->pLight, param->pV0);
+        DrawTriangleIl(param, param->dc, i);
     }
     
     InterlockedAdd(&count, 1);
+}
+
+void SetFullScreen(HWND hwnd)
+{
+    DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
+    
+    if (dwStyle & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO mi = { sizeof(mi) };
+
+        if (GetWindowPlacement(hwnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hwnd,MONITOR_DEFAULTTOPRIMARY), &mi)) 
+        {
+            SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
+                        SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    } else {
+        SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd, &g_wpPrev);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                    SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
 }
 
 void DrawProc(HDC hdc)
