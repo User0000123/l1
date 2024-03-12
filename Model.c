@@ -607,7 +607,7 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
             if (zBuffer[idx] > pThreadParams->pP->data[2]) {
                 zBuffer[idx] = pThreadParams->pP->data[2];
 
-								double shininessVal = 80.0;
+								double shininessVal = 320.0;
 								//gsl_vector *L = gsl_vector_alloc(4);
 
 								gsl_vector *L = gsl_vector_alloc(4);
@@ -641,24 +641,25 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 									double specAngle;
 									gsl_blas_ddot(diff, V, &specAngle);
 									//printf("%f\n", specAngle);
+									//specAngle = 1 - specAngle;
 									specAngle = max(specAngle, 0.0);
 									specular = pow(specAngle, shininessVal);
 									
 								}
 
 								gsl_vector_free(L);
-
-                pBytes[offset + 0] = ((lambertian * 204) + 52 + (specular * 255)); 
-                pBytes[offset + 1] = ((lambertian * 102) + 25 + (specular * 255));
-                pBytes[offset + 2] = ((lambertian * 0) + 0 + (specular * 255));   
+								//printf("%f\n", specular);
+                pBytes[offset + 0] = min(((lambertian * 204) + 52 + (specular * 255)), 255); 
+                pBytes[offset + 1] = min(((lambertian * 102) + 25 + (specular * 255)), 255);
+                pBytes[offset + 2] = min(((lambertian * 0) + 0 + (specular * 255)), 255);   
             }
             LeaveCriticalSection(zBufferCS+idx);
         }
 
 					gsl_vector_free(V);
-								gsl_vector_free(Rr);
-								gsl_vector_free(reflection);
-								gsl_vector_free(diff);
+					gsl_vector_free(Rr);
+					gsl_vector_free(reflection);
+					gsl_vector_free(diff);
     }
 }
 
