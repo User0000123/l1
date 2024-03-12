@@ -609,7 +609,6 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 
 								double shininessVal = 80.0;
 								//gsl_vector *L = gsl_vector_alloc(4);
-								
 
 								gsl_vector *L = gsl_vector_alloc(4);
 								gsl_vector_memcpy(L, eye);
@@ -626,32 +625,24 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 								double specular = 0.0;
 
 								if(lambertian > 0.0) {
-									
+
 									gsl_vector_memcpy(diff, L);
-									gsl_vector_sub(diff, pThreadParams->pPN);
 
 									double tmp;
 									gsl_blas_ddot(diff, pThreadParams->pPN, &tmp);
-
 									
 									gsl_vector_memcpy(reflection, pThreadParams->pPN);
 									gsl_vector_scale(reflection, 2 * tmp);
-									gsl_vector_sub(reflection, diff);
+									gsl_vector_sub(diff, reflection);
 
-									
-									gsl_vector_memcpy(Rr, pThreadParams->pPN);
-									gsl_vector_add(Rr, reflection);
-
-									
-									gsl_vector_memcpy(V, pThreadParams->pP);
-									gsl_vector_scale(V, 1.0 / gsl_blas_dnrm2(V));
+									gsl_vector_memcpy(V, L);
 									// Compute the specular term
 									
 									double specAngle;
-									gsl_blas_ddot(Rr, V, &specAngle);
+									gsl_blas_ddot(diff, V, &specAngle);
+									//printf("%f\n", specAngle);
 									specAngle = max(specAngle, 0.0);
 									specular = pow(specAngle, shininessVal);
-
 									
 								}
 
