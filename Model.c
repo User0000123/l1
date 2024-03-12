@@ -608,14 +608,20 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
                 zBuffer[idx] = pThreadParams->pP->data[2];
 
 								double shininessVal = 80.0;
+								//gsl_vector *L = gsl_vector_alloc(4);
+								
+
 								gsl_vector *L = gsl_vector_alloc(4);
 								gsl_vector_memcpy(L, eye);
-								gsl_vector_sub(L, pThreadParams->pP);
-  							gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+								gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
 								double lambertian;
 								gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
 								lambertian = max(0, lambertian);
+
+								// gsl_vector_memcpy(L, eye);
+								// gsl_vector_sub(L, pThreadParams->pP);
+  							// gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
 								double specular = 0.0;
 
