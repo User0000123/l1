@@ -131,7 +131,6 @@ typedef struct {
 		gsl_vector *pAN;
     gsl_vector *pBN;
     gsl_vector *pPN;
-		gsl_vector *pLight;
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
 HANDLE hTaskExecutedEvent;
@@ -306,7 +305,6 @@ void InitializeResources()
 				params[i].pAN = gsl_vector_alloc(4);
 				params[i].pBN = gsl_vector_alloc(4);
 				params[i].pPN = gsl_vector_alloc(4);
-				params[i].pLight = gsl_vector_alloc(4);
     }
 
     hbrBackground = CreateSolidBrush(RGB(255, 0, 0));
@@ -587,6 +585,11 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 
 				int offset;
 
+								gsl_vector* diff = gsl_vector_alloc(4);
+								gsl_vector *reflection = gsl_vector_alloc(4);
+								gsl_vector *Rr = gsl_vector_alloc(4);
+								gsl_vector *V = gsl_vector_alloc(4);
+
         for (int j = pThreadParams->pA->data[0]+1; j <= pThreadParams->pB->data[0]; j++) {
             if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
             double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j-pThreadParams->pA->data[0])/(double)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]+1);
@@ -604,16 +607,61 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
             if (zBuffer[idx] > pThreadParams->pP->data[2]) {
                 zBuffer[idx] = pThreadParams->pP->data[2];
 
-								double intens;
-								gsl_blas_ddot(pThreadParams->pPN, pThreadParams->pLight, &intens);
-								intens = max(0, intens);
+								double shininessVal = 80.0;
+								gsl_vector *L = gsl_vector_alloc(4);
+								gsl_vector_memcpy(L, eye);
+								gsl_vector_sub(L, pThreadParams->pP);
+  							gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
-                pBytes[offset + 0] = intens * 255;
-                pBytes[offset + 1] = intens * 255;
-                pBytes[offset + 2] = intens * 255;   
+								double lambertian;
+								gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
+								lambertian = max(0, lambertian);
+
+								double specular = 0.0;
+
+								if(lambertian > 0.0) {
+									
+									gsl_vector_memcpy(diff, L);
+									gsl_vector_sub(diff, pThreadParams->pPN);
+
+									double tmp;
+									gsl_blas_ddot(diff, pThreadParams->pPN, &tmp);
+
+									
+									gsl_vector_memcpy(reflection, pThreadParams->pPN);
+									gsl_vector_scale(reflection, 2 * tmp);
+									gsl_vector_sub(reflection, diff);
+
+									
+									gsl_vector_memcpy(Rr, pThreadParams->pPN);
+									gsl_vector_add(Rr, reflection);
+
+									
+									gsl_vector_memcpy(V, pThreadParams->pP);
+									gsl_vector_scale(V, 1.0 / gsl_blas_dnrm2(V));
+									// Compute the specular term
+									
+									double specAngle;
+									gsl_blas_ddot(Rr, V, &specAngle);
+									specAngle = max(specAngle, 0.0);
+									specular = pow(specAngle, shininessVal);
+
+									
+								}
+
+								gsl_vector_free(L);
+
+                pBytes[offset + 0] = ((lambertian * 204) + 52 + (specular * 255)); 
+                pBytes[offset + 1] = ((lambertian * 102) + 25 + (specular * 255));
+                pBytes[offset + 2] = ((lambertian * 0) + 0 + (specular * 255));   
             }
             LeaveCriticalSection(zBufferCS+idx);
         }
+
+					gsl_vector_free(V);
+								gsl_vector_free(Rr);
+								gsl_vector_free(reflection);
+								gsl_vector_free(diff);
     }
 }
 
@@ -639,14 +687,6 @@ void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
     PARAMS *param = (PARAMS *) params;
     for (int i = param->from; i < param->to; i++)
     {
-				gsl_vector_int *pVector = pObjFile->fv->data[i];
-				gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
-
- 				gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
-        gsl_vector_sub(param->pV0, eye);
-        gsl_vector_scale(param->pV0, -1.0 / gsl_blas_dnrm2(param->pV0));
-
-				gsl_vector_memcpy(param->pLight, param->pV0);
         DrawTriangleIl(param, param->dc, i);
     }
     
