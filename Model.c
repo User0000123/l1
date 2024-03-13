@@ -111,8 +111,8 @@ byte keys[255];
 
 	/* Multithreading */
 #define N_QUEUE_MAX_SIZE    10000
-#define N_THREADS           30
-#define N_PARAMS            6
+#define N_THREADS           16
+#define N_PARAMS            24
 HTHDPOOL hPool;
 typedef struct {
     HDC dc;
