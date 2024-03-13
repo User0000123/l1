@@ -137,6 +137,8 @@ typedef struct {
 		gsl_vector *pAN;
     gsl_vector *pBN;
     gsl_vector *pPN;
+	gsl_vector *pL;
+	gsl_vector *pReflectionVR;
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
 HANDLE hTaskExecutedEvent;
@@ -317,6 +319,8 @@ void InitializeResources()
 				params[i].pAN = gsl_vector_alloc(4);
 				params[i].pBN = gsl_vector_alloc(4);
 				params[i].pPN = gsl_vector_alloc(4);
+		params[i].pL = gsl_vector_alloc(4);
+		params[i].pReflectionVR = gsl_vector_alloc(4);
     }
 
 	hbrBackground = CreateSolidBrush(RGB(255, 0, 0));
@@ -629,18 +633,18 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 
 								double shininessVal = 80.0;
 
-								gsl_vector *L = gsl_vector_alloc(4);
-								gsl_vector_memcpy(L, eye);
-								gsl_vector_sub(L, pThreadParams->pPs);
-								gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+								// gsl_vector *L = gsl_vector_alloc(4);
+								gsl_vector_memcpy(pThreadParams->pL, eye);
+								gsl_vector_sub(pThreadParams->pL, pThreadParams->pPs);
+								gsl_vector_scale(pThreadParams->pL, 1.0 / gsl_blas_dnrm2(pThreadParams->pL));
 
 								double lambertian;
-								gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
+								gsl_blas_ddot(pThreadParams->pPN, pThreadParams->pL, &lambertian);
 								lambertian = max(0, lambertian);
 
 								double specular = 0.0;
 
-								gsl_vector* reflectionVR = gsl_vector_alloc(4);
+								// gsl_vector* reflectionVR = gsl_vector_alloc(4);
 								//gsl_vector* observerEyeVV = gsl_vector_alloc(4);
 
 								if(lambertian > 0.0) {
@@ -649,24 +653,24 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 									// gsl_blas_ddot(L, pThreadParams->pPN, &lightNormalAngle);
 									// lambertian === lightNormalAngle
 									
-									gsl_vector_memcpy(reflectionVR, L);
-									gsl_vector_scale(L, -1);
+									gsl_vector_memcpy(pThreadParams->pReflectionVR, pThreadParams->pL);
+									gsl_vector_scale(pThreadParams->pL, -1);
 									gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
-									gsl_vector_sub(reflectionVR, pThreadParams->pPN);
+									gsl_vector_sub(pThreadParams->pReflectionVR, pThreadParams->pPN);
 									
 									double specAngle;
 									//gsl_vector_memcpy(observerEyeVV, L);
 									//gsl_blas_ddot(reflectionVR, observerEyeVV, &specAngle);
-									gsl_blas_ddot(reflectionVR, L, &specAngle);
+									gsl_blas_ddot(pThreadParams->pReflectionVR, pThreadParams->pL, &specAngle);
 									specAngle = max(specAngle, 0.0);
 									specular = pow(specAngle, shininessVal);
 									
 								}
 
-								gsl_vector_free(reflectionVR);
+								// gsl_vector_free(pThreadParams->pReflectionVR);
 								//gsl_vector_free(observerEyeVV);
 
-								gsl_vector_free(L);
+								// gsl_vector_free(L);
 	
                 pBytes[offset + 0] = min(((lambertian * 204) + 52 + (specular * 255)), 255); 
                 pBytes[offset + 1] = min(((lambertian * 102) + 25 + (specular * 255)), 255);
