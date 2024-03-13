@@ -115,23 +115,28 @@ byte keys[255];
 #define N_PARAMS            6
 HTHDPOOL hPool;
 typedef struct {
-	HDC dc;
-	int from;
-	int to;
-	gsl_vector *pV0;
-	gsl_vector *pV1;
-	gsl_vector *pV2;
-	gsl_vector *pA;
-	gsl_vector *pB;
-	gsl_vector *pP;
-	gsl_vector *norm;
+    HDC dc;
+    int from;
+    int to;
+    gsl_vector *pV0;
+    gsl_vector *pV1;
+    gsl_vector *pV2;
+		gsl_vector *pVs0;
+		gsl_vector *pVs1;
+		gsl_vector *pVs2;
+    gsl_vector *pA;
+    gsl_vector *pB;
+    gsl_vector *pP;
+		gsl_vector *pAs;
+    gsl_vector *pBs;
+    gsl_vector *pPs;
+    gsl_vector *norm;
 		gsl_vector *pVN0;
 		gsl_vector *pVN1;
 		gsl_vector *pVN2;
 		gsl_vector *pAN;
-	gsl_vector *pBN;
-	gsl_vector *pPN;
-		gsl_vector *pLight;
+    gsl_vector *pBN;
+    gsl_vector *pPN;
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
 HANDLE hTaskExecutedEvent;
@@ -291,23 +296,28 @@ void InitializeResources()
 
 	light = gsl_vector_calloc(4);
 
-	for (int i = 0; i < N_PARAMS; i++)
-	{
-		params[i].pV0 = gsl_vector_calloc(4);
-		params[i].pV1 = gsl_vector_calloc(4); 
-		params[i].pV2 = gsl_vector_calloc(4);
-		params[i].pA = gsl_vector_calloc(4);
-		params[i].pB = gsl_vector_calloc(4);
-		params[i].pP = gsl_vector_calloc(4);
-		params[i].norm = gsl_vector_calloc(4);
+    for (int i = 0; i < N_PARAMS; i++)
+    {
+        params[i].pV0 = gsl_vector_calloc(4);
+        params[i].pV1 = gsl_vector_calloc(4); 
+        params[i].pV2 = gsl_vector_calloc(4);
+				params[i].pVs0 = gsl_vector_calloc(4);
+				params[i].pVs1 = gsl_vector_calloc(4);
+				params[i].pVs2 = gsl_vector_calloc(4);
+        params[i].pA = gsl_vector_calloc(4);
+        params[i].pB = gsl_vector_calloc(4);
+        params[i].pP = gsl_vector_calloc(4);
+				params[i].pAs = gsl_vector_calloc(4);
+        params[i].pBs = gsl_vector_calloc(4);
+        params[i].pPs = gsl_vector_calloc(4);
+        params[i].norm = gsl_vector_calloc(4);
 				params[i].pVN0 = gsl_vector_calloc(4);
 		params[i].pVN1 = gsl_vector_calloc(4); 
 		params[i].pVN2 = gsl_vector_calloc(4);
 				params[i].pAN = gsl_vector_alloc(4);
 				params[i].pBN = gsl_vector_alloc(4);
 				params[i].pPN = gsl_vector_alloc(4);
-				params[i].pLight = gsl_vector_alloc(4);
-	}
+    }
 
 	hbrBackground = CreateSolidBrush(RGB(255, 0, 0));
 }
@@ -495,37 +505,42 @@ inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangl
 	}
 }
 
-void calculateNormal(gsl_vector* first, gsl_vector* second, double scale, gsl_vector* result) {
-		gsl_vector_memcpy(result, second);
-		gsl_vector_sub(result, first);
-		gsl_vector_scale(result, scale);
-		gsl_vector_add(result, first);
-		gsl_vector_scale(result, 1.0 / gsl_blas_dnrm2(result));
+/**
+ * @brief Interpolate third vector between two which align between on 
+ * 
+ * @param firstVector 
+ * @param secondVector 
+ * @param rotationPercent 
+ * @param interpolatedVector 
+ */
+void interpolateVector(gsl_vector* firstVector, gsl_vector* secondVector, double rotationPercent, gsl_vector* interpolatedVector, BOOL isNormalized) {
+		gsl_vector_memcpy(interpolatedVector, secondVector);
+
+		gsl_vector_sub(interpolatedVector, firstVector);
+		gsl_vector_scale(interpolatedVector, rotationPercent);
+		gsl_vector_add(interpolatedVector, firstVector);
+
+		if(isNormalized)
+			gsl_vector_scale(interpolatedVector, 1.0 / gsl_blas_dnrm2(interpolatedVector));
 }
 
-void calculateSideScanlinePoints(PARAMS *pThreadParams, double alpha, BOOL second_half, double beta) {
-		gsl_vector_memcpy(pThreadParams->pA, pThreadParams->pV2);
-		gsl_vector_sub(pThreadParams->pA, pThreadParams->pV0);
-		gsl_vector_scale(pThreadParams->pA, alpha);
-		gsl_vector_add(pThreadParams->pA, pThreadParams->pV0);
+void calculateSideScanlinePoints(PARAMS *p, double alpha, BOOL second_half, double beta) {
 
-		calculateNormal(pThreadParams->pVN0, pThreadParams->pVN2, alpha, pThreadParams->pAN);
+		interpolateVector(p->pV0, p->pV2, alpha, p->pA, FALSE);
+		interpolateVector(p->pVs0, p->pVs2, alpha, p->pAs, FALSE);
+		interpolateVector(p->pVN0, p->pVN2, alpha, p->pAN, TRUE);
 
 		if (second_half)
 		{
-				gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV2);
-				gsl_vector_sub(pThreadParams->pB, pThreadParams->pV1);
-				gsl_vector_scale(pThreadParams->pB, beta);
-				gsl_vector_add(pThreadParams->pB, pThreadParams->pV1);
-				calculateNormal(pThreadParams->pVN1, pThreadParams->pVN2, beta, pThreadParams->pBN);
+				interpolateVector(p->pV1, p->pV2, beta, p->pB, FALSE);
+				interpolateVector(p->pVs1, p->pVs2, beta, p->pBs, FALSE);
+				interpolateVector(p->pVN1, p->pVN2, beta, p->pBN, TRUE);
 		}
 		else
 		{
-				gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV1);
-				gsl_vector_sub(pThreadParams->pB, pThreadParams->pV0);
-				gsl_vector_scale(pThreadParams->pB, beta);
-				gsl_vector_add(pThreadParams->pB, pThreadParams->pV0);
-				calculateNormal(pThreadParams->pVN0, pThreadParams->pVN1, beta, pThreadParams->pBN);
+				interpolateVector(p->pV0, p->pV1, beta, p->pB, FALSE);
+				interpolateVector(p->pVs0, p->pVs1, beta, p->pBs, FALSE);
+				interpolateVector(p->pVN0, p->pVN1, beta, p->pBN, TRUE);
 		}
 }
 
@@ -534,35 +549,42 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 		gsl_vector_int *pTriangleVertices = pObjFile->fv->data[index];
 	if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
 
-		/*CHANGES*/
 		gsl_vector_memcpy(pThreadParams->pVN0, pObjFile->vn->data[pTriangleVertices->data[0]]); //<!-- can be moved into resource initialization ferther
 		gsl_vector_memcpy(pThreadParams->pVN1, pObjFile->vn->data[pTriangleVertices->data[1]]); //<!-- can be moved into resource initialization ferther
 		gsl_vector_memcpy(pThreadParams->pVN2, pObjFile->vn->data[pTriangleVertices->data[2]]); //<!-- can be moved into resource initialization ferther
+
+		gsl_vector_memcpy(pThreadParams->pVs0, pObjFile->v->data[pTriangleVertices->data[0]]); //<!-- can be moved into resource initialization ferther
+		gsl_vector_memcpy(pThreadParams->pVs1, pObjFile->v->data[pTriangleVertices->data[1]]); //<!-- can be moved into resource initialization ferther
+		gsl_vector_memcpy(pThreadParams->pVs2, pObjFile->v->data[pTriangleVertices->data[2]]); //<!-- can be moved into resource initialization ferther
 
 	gsl_vector_memcpy(pThreadParams->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
 	gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
 	gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
-	if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) {
-			SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1); //<!-- gsl_vactor_swap exists
+    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) {
+			SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV1); //<!-- sgsl_vactor_swap exist
 			SWAP_VECTORS(pThreadParams->pVN0, pThreadParams->pVN1);
+			SWAP_VECTORS(pThreadParams->pVs0, pThreadParams->pVs1);
 		}
 	if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) {
 			SWAP_VECTORS(pThreadParams->pV0, pThreadParams->pV2);
 			SWAP_VECTORS(pThreadParams->pVN0, pThreadParams->pVN2);
+			SWAP_VECTORS(pThreadParams->pVs0, pThreadParams->pVs2);
 		}
 	if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) {
 			SWAP_VECTORS(pThreadParams->pV1, pThreadParams->pV2);
 			SWAP_VECTORS(pThreadParams->pVN1, pThreadParams->pVN2);
+			SWAP_VECTORS(pThreadParams->pVs1, pThreadParams->pVs2);
 		}
 
-	for (int i = 0; i < 2; i++)
-	{
-		pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
-		pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
-		pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
-	}
-	if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return; //<!-- realy need this? it is validation of .obj file actually
+    for (int i = 0; i < 2; i++)
+    {
+        pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
+        pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
+        pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
+    }
+
+    if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return; //<!-- realy need this? it is validation of .obj file actually
 
 	int total_height = pThreadParams->pV2->data[1] - pThreadParams->pV0->data[1];
 
@@ -582,20 +604,21 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 
 		if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) {
 					 SWAP_VECTORS(pThreadParams->pA, pThreadParams->pB);
+					 SWAP_VECTORS(pThreadParams->pAs, pThreadParams->pBs);
 					 SWAP_VECTORS(pThreadParams->pAN, pThreadParams->pBN);
 				}
 
 				int offset;
 
-		for (int j = pThreadParams->pA->data[0]+1; j <= pThreadParams->pB->data[0]; j++) {
-			if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
-			double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j-pThreadParams->pA->data[0])/(double)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]+1);
-			gsl_vector_memcpy(pThreadParams->pP, pThreadParams->pB);
-			gsl_vector_sub(pThreadParams->pP, pThreadParams->pA);
-			gsl_vector_scale(pThreadParams->pP, phi);
-			gsl_vector_add(pThreadParams->pP, pThreadParams->pA);
+        for (int j = pThreadParams->pA->data[0]+1; j <= pThreadParams->pB->data[0]; j++) {
 
-						calculateNormal(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN);
+            if (j < 0 || j >= bmp.bmWidth || ((int) pThreadParams->pV0->data[1] + i) < 0 || ((int) pThreadParams->pV0->data[1] + i) >= bmp.bmHeight) continue;
+            
+						double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j-pThreadParams->pA->data[0])/(double)(pThreadParams->pB->data[0]-pThreadParams->pA->data[0]+1);
+
+						interpolateVector(pThreadParams->pA, pThreadParams->pB, phi, pThreadParams->pP, FALSE);
+						interpolateVector(pThreadParams->pAs, pThreadParams->pBs, phi, pThreadParams->pPs, FALSE);
+						interpolateVector(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN, TRUE);
 
 			offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
 			int idx = j+(pThreadParams->pV0->data[1] + i)*bmp.bmWidth;
@@ -604,17 +627,55 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, HDC dc, int index)
 			if (zBuffer[idx] > pThreadParams->pP->data[2]) {
 				zBuffer[idx] = pThreadParams->pP->data[2];
 
-								double intens;
-								gsl_blas_ddot(pThreadParams->pPN, eye, &intens);
-								intens = max(0, intens);
+								double shininessVal = 80.0;
 
-				pBytes[offset + 0] = intens * 255;
-				pBytes[offset + 1] = intens * 255;
-				pBytes[offset + 2] = intens * 255;   
-			}
-			LeaveCriticalSection(zBufferCS+idx);
-		}
-	}
+								gsl_vector *L = gsl_vector_alloc(4);
+								gsl_vector_memcpy(L, eye);
+								gsl_vector_sub(L, pThreadParams->pPs);
+								gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+
+								double lambertian;
+								gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
+								lambertian = max(0, lambertian);
+
+								double specular = 0.0;
+
+								gsl_vector* reflectionVR = gsl_vector_alloc(4);
+								//gsl_vector* observerEyeVV = gsl_vector_alloc(4);
+
+								if(lambertian > 0.0) {
+
+									// double lightNormalAngle;
+									// gsl_blas_ddot(L, pThreadParams->pPN, &lightNormalAngle);
+									// lambertian === lightNormalAngle
+									
+									gsl_vector_memcpy(reflectionVR, L);
+									gsl_vector_scale(L, -1);
+									gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
+									gsl_vector_sub(reflectionVR, pThreadParams->pPN);
+									
+									double specAngle;
+									//gsl_vector_memcpy(observerEyeVV, L);
+									//gsl_blas_ddot(reflectionVR, observerEyeVV, &specAngle);
+									gsl_blas_ddot(reflectionVR, L, &specAngle);
+									specAngle = max(specAngle, 0.0);
+									specular = pow(specAngle, shininessVal);
+									
+								}
+
+								gsl_vector_free(reflectionVR);
+								//gsl_vector_free(observerEyeVV);
+
+								gsl_vector_free(L);
+	
+                pBytes[offset + 0] = min(((lambertian * 204) + 52 + (specular * 255)), 255); 
+                pBytes[offset + 1] = min(((lambertian * 102) + 25 + (specular * 255)), 255);
+                pBytes[offset + 2] = min(((lambertian * 0) + 0 + (specular * 255)), 255);   
+            }
+            LeaveCriticalSection(zBufferCS+idx);
+        }
+
+    }
 }
 
 void flatShading(int index, PARAMS *param, double *intens)
@@ -636,21 +697,13 @@ void flatShading(int index, PARAMS *param, double *intens)
 
 void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
 {
-	PARAMS *param = (PARAMS *) params;
-	for (int i = param->from; i < param->to; i++)
-	{
-				gsl_vector_int *pVector = pObjFile->fv->data[i];
-				gsl_vector_memcpy(param->pV0, gvWorldVertices[pVector->data[0]]);
-
-				 gsl_vector_scale(param->norm, 1.0 / gsl_blas_dnrm2(param->norm));
-		gsl_vector_sub(param->pV0, eye);
-		gsl_vector_scale(param->pV0, -1.0 / gsl_blas_dnrm2(param->pV0));
-
-				gsl_vector_memcpy(param->pLight, param->pV0);
-		DrawTriangleIl(param, param->dc, i);
-	}
-	
-	InterlockedAdd(&count, 1);
+    PARAMS *param = (PARAMS *) params;
+    for (int i = param->from; i < param->to; i++)
+    {
+        DrawTriangleIl(param, param->dc, i);
+    }
+    
+    InterlockedAdd(&count, 1);
 }
 
 void SetFullScreen(HWND hwnd)

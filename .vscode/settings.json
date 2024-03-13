@@ -1,22 +1,23 @@
 {
     "files.associations": {
-        "modelresources.h": "c",
-        "windows.h": "c",
-        "shellscalingapi.h": "c",
-        "doublebuffering.h": "c",
-        "crtdbg.h": "c",
-        "gsl_matrix.h": "c",
-        "stdlib.h": "c",
-        "gsl_vector.h": "c",
-        "matrixtransformations.h": "c",
-        "modelsettings.h": "c",
-        "model.h": "c",
-        "darray.h": "c",
-        "*.exe": "c",
-        "limits": "c",
-        "*.tcc": "c",
-        "windowsx.h": "c",
-        "gsl_blas.h": "c",
-        "cmath": "c"
-    }
+			"modelresources.h": "c",
+			"windows.h": "c",
+			"shellscalingapi.h": "c",
+			"doublebuffering.h": "c",
+			"crtdbg.h": "c",
+			"gsl_matrix.h": "c",
+			"stdlib.h": "c",
+			"gsl_vector.h": "c",
+			"matrixtransformations.h": "c",
+			"modelsettings.h": "c",
+			"model.h": "c",
+			"darray.h": "c",
+			"*.exe": "c",
+			"limits": "c",
+			"*.tcc": "c",
+			"windowsx.h": "c",
+			"gsl_blas.h": "c",
+			"cmath": "c",
+			"type_traits": "c"
+		}
 }
