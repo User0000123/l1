@@ -177,6 +177,8 @@ double translView[] =
         R, R, R, R,
         0, 0, 0, 1};
 
+double shininessVal = 80.0;
+
 inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *result)
 {
   result->data[0] = v1->data[1] * v2->data[2] - v1->data[2] * v2->data[1];
@@ -613,7 +615,6 @@ void DrawTriangleIl(PARAMS *pThreadParams)
         zBuffer[idx] = pThreadParams->pP->data[2];
 
         double lambertian = 0.0;
-        double shininessVal = 80.0;
         double specular = 0.0;
 
         gsl_vector *L = pThreadParams->L;
