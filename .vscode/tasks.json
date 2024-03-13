@@ -3,19 +3,19 @@
         {
             "type": "cppbuild",
             "label": "C/C++: gcc.exe сборка активного файла",
-            "command": "D:\\msys64\\mingw64\\bin\\gcc.exe",
+            "command": "C:\\msys64\\mingw64\\bin\\gcc.exe",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
                 "-O3",
-                "${workspaceFolder}\\EntryPoint.c",
-                "${workspaceFolder}\\Model.c", 
-                "${workspaceFolder}\\DoubleBuffering.c",
-                "${workspaceFolder}\\Parser.c",
-                "${workspaceFolder}\\DArray.c",
-                "${workspaceFolder}\\MatrixTransformations.c",
-                "${workspaceFolder}\\BlockingQueue.c",
-                "${workspaceFolder}\\ThreadPool.c",
+                "${fileDirname}\\EntryPoint.c",
+                "${fileDirname}\\Model.c",
+                "${fileDirname}\\DoubleBuffering.c",
+                "${fileDirname}\\Parser.c",
+                "${fileDirname}\\DArray.c",
+                "${fileDirname}\\MatrixTransformations.c",
+                "${fileDirname}\\BlockingQueue.c",
+                "${fileDirname}\\ThreadPool.c",
                 "-llibgsl",
                 "-lgdi32",
                 "-march=native",
@@ -23,7 +23,7 @@
                 "${fileDirname}\\release\\${fileBasenameNoExtension}.exe",
             ],
             "options": {
-                "cwd": "D:\\msys64\\mingw64\\bin"
+                "cwd": "C:\\msys64\\mingw64\\bin"
             },
             "problemMatcher": [
                 "$gcc"
