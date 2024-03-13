@@ -983,7 +983,7 @@ int WINAPI ModelStart(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 
 	fps.out = tcsFpsInfo;
 	fps.lastTime = GetTickCount();
-	fprintf(stdout, "%f", gsl_blas_dnrm2(eye));
+	
 	// while (GetMessage(&msg, NULL, 0, 0))
 	// {
 	//     DispatchMessage(&msg);
