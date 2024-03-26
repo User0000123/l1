@@ -1,3 +1,5 @@
 release/
 .vscode/
+model/
+*.obj
 cga.pdf
