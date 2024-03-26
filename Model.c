@@ -25,8 +25,8 @@
 #define APPLICATION_NAME    _TEXT("3D Model")
 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj"
-// #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj"
-#define PTH_OBJ_FILE "D:\\msys64cppworkspace\\graphics_alex\\l1\\model.obj"
+#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj"
+// #define PTH_OBJ_FILE "D:\\msys64cppworkspace\\graphics_alex\\l1\\model.obj"
 // #define PTH_OBJ_FILE        "C:\\test.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\the-billiards-room\\source\\{E92F06F9-2FE5-440C-80A3-14D7B6C23206}\\model.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj"
@@ -920,8 +920,8 @@ void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
   PARAMS *param = (PARAMS *)params;
   for (int i = param->from; i < param->to; i++)
   {
-    if (!PrepareTriangleFillData(param, i))
-      DrawTriangleIl(param);
+    // if (!PrepareTriangleFillData(param, i))
+      DrawTriangleIl(param, i);
   }
 
   InterlockedAdd(&count, 1);
