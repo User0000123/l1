@@ -19,6 +19,9 @@
 #include "DoubleBuffering.h"
 #include "FpsUtility.h"
 
+#include <jpeglib.h>
+#include <png.h>
+
 #define APPLICATION_NAME    _TEXT("3D Model")
 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj" 
@@ -27,11 +30,17 @@
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\the-billiards-room\\source\\{E92F06F9-2FE5-440C-80A3-14D7B6C23206}\\model.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj" 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj"
-//  #define PTH_OBJ_FILE        "Model\\model.obj"
+//  #define PTH_OBJ_FILE        "./model.obj"
+#define PTH_AMBIENT_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_AO.jpg"
+#define PTH_ALBEDO_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_albedo.jpg"
+#define PTH_NORMALS_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_normal.png"
+#define PTH_SPECULAR_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_roughness.jpg"
+
 
 #define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
 //#define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
 #define BACKGROUND_BRUSH    BLACK_BRUSH
+#define COLOR_BCKGRD		RGB(0, 0, 0)
 #define COLOR_IMAGE         RGB(255, 255, 255)
 
 #define TIMER_REPAINT_ID    1
@@ -43,7 +52,7 @@
 DOUBLE CAMERA_VIEW_WIDTH =  2;
 DOUBLE CAMERA_VIEW_HEIGHT = 2;
 #define Z_NEAR              1
-#define Z_FAR               5
+#define Z_FAR               1000
 
 	/* Graphic window */
 HWND hwndMainWindow;
@@ -68,6 +77,12 @@ TCHAR *tcsFpsInfo;
 FILE *objFile;
 ObjFile *pObjFile;
 
+	/* Textures */
+byte *ambientBuffer;
+byte *albedoBuffer;
+byte *normalsBuffer;
+byte *specularBuffer;
+
 	/* Model temp vertices */
 gsl_vector **gvWorldVertices;
 gsl_vector **gvPaintVertices;
@@ -85,6 +100,7 @@ gsl_vector *up;
 gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
+DOUBLE yOffset = 		0;
 DOUBLE destR =          2;
 DOUBLE angleThetha =    M_PI_2;
 DOUBLE anglePhi =       M_PI_2;
@@ -124,6 +140,23 @@ typedef struct {
     gsl_vector *pVs0;
     gsl_vector *pVs1;
     gsl_vector *pVs2;
+
+	gsl_vector *pAT;
+	gsl_vector *pBT;
+	gsl_vector *pPT;
+	gsl_vector *pVT0;
+	gsl_vector *pVT1;
+	gsl_vector *pVT2;
+	gsl_vector *pTangent;
+	gsl_vector *pBTangent;
+	gsl_vector *pNormal;
+	gsl_matrix *pTBN;
+	gsl_vector *pE1;
+	gsl_vector *pE2;
+	gsl_vector *pUV1;
+	gsl_vector *pUV2;
+	gsl_vector *pResult;
+
     gsl_vector *pA;
     gsl_vector *pB;
     gsl_vector *pP;
@@ -137,7 +170,7 @@ typedef struct {
     gsl_vector *pAN;
     gsl_vector *pBN;
     gsl_vector *pPN;
-		gsl_vector *L;
+	gsl_vector *L;
 
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
@@ -186,6 +219,92 @@ inline int isInside(gsl_vector *pPoint)
 	return ((pPoint->data[0] > -pPoint->data[3] && pPoint->data[0] < pPoint->data[3]) && 
 		(pPoint->data[1] > -pPoint->data[3] && pPoint->data[1] < pPoint->data[3]) &&
 		(pPoint->data[2] > 0 && pPoint->data[2] < pPoint->data[3]));
+}
+
+void LoadJpg(char *textureFileName, byte **colorBuffer)
+{
+	FILE *textureFile;
+	struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    unsigned long buffer_size;
+
+    // Open the JPEG file
+    textureFile = fopen(textureFileName, "rb");
+    if (!textureFile) {
+        fprintf(stderr, "Failed to open image file\n");
+        return;
+    }
+
+    // Initialize the JPEG decompression object
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_decompress(&cinfo);
+
+    // Specify the source file
+    jpeg_stdio_src(&cinfo, textureFile);
+
+    // Read the JPEG header
+    (void)jpeg_read_header(&cinfo, TRUE);
+
+    // Start the decompression process
+    (void)jpeg_start_decompress(&cinfo);
+
+    // Calculate buffer size
+    buffer_size = cinfo.output_width * cinfo.output_height * cinfo.output_components;
+
+    // Allocate memory for the buffer
+    *colorBuffer = (byte *)malloc(buffer_size);
+	byte *bufarray = *colorBuffer;
+
+    // Read scanlines and copy to buffer
+    JSAMPROW row_pointer[1];
+    unsigned long offset = 0;
+    while (cinfo.output_scanline < cinfo.output_height) {
+        row_pointer[0] = &bufarray[offset];
+        (void)jpeg_read_scanlines(&cinfo, row_pointer, 1);
+        offset += cinfo.output_width * cinfo.output_components;
+    }
+
+    // Finish the decompression process
+    (void)jpeg_finish_decompress(&cinfo);
+
+    // Clean up the JPEG decompression object
+    jpeg_destroy_decompress(&cinfo);
+
+    // Close the file
+    fclose(textureFile);
+}
+
+void LoadPng(char* filename, byte** buffer) {
+    FILE* fp = fopen(filename, "rb");
+	int height;
+	int width;
+
+    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+
+    png_init_io(png_ptr, fp);
+    png_read_info(png_ptr, info_ptr);
+
+    png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+    png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+
+    // Allocate memory for the buffer
+    size_t row_bytes = png_get_rowbytes(png_ptr, info_ptr);
+	width = png_get_image_width(png_ptr, info_ptr);
+	height = png_get_image_height(png_ptr, info_ptr);
+    *buffer = (unsigned char*)malloc(width * height * 3);
+
+    png_bytepp row_pointers = (png_bytepp)malloc(width * sizeof(png_bytep));
+    for (int y = 0; y < height; y++) {
+        row_pointers[y] = (*buffer) + (y * row_bytes);
+    }
+
+    png_read_image(png_ptr, row_pointers);
+
+    // Clean up
+    fclose(fp);
+    free(row_pointers);
+    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
 }
 
 void ApplyTransformations()
@@ -319,10 +438,30 @@ void InitializeResources()
         params[i].pAN = gsl_vector_alloc(4);
         params[i].pBN = gsl_vector_alloc(4);
         params[i].pPN = gsl_vector_alloc(4);
-				params[i].L = gsl_vector_alloc(4);
+		params[i].L = gsl_vector_alloc(4);
+
+		params[i].pAT = gsl_vector_alloc(4);
+		params[i].pBT = gsl_vector_alloc(4);
+		params[i].pPT = gsl_vector_alloc(4);
+		params[i].pVT0 = gsl_vector_alloc(4);
+		params[i].pVT1 = gsl_vector_alloc(4);
+		params[i].pVT2 = gsl_vector_alloc(4);
+		params[i].pTBN = gsl_matrix_calloc(4,4);
+		params[i].pTangent = gsl_vector_alloc_row_from_matrix(params[i].pTBN, 0);
+		params[i].pBTangent = gsl_vector_alloc_row_from_matrix(params[i].pTBN, 1);
+		params[i].pNormal = gsl_vector_alloc_row_from_matrix(params[i].pTBN, 2);
+		params[i].pResult = gsl_vector_alloc(4);
+		params[i].pE1 = gsl_vector_alloc(4);
+		params[i].pE2 = gsl_vector_alloc(4);
+		params[i].pUV1 = gsl_vector_alloc(4);
+		params[i].pUV2 = gsl_vector_alloc(4);
     }
 
-	hbrBackground = CreateSolidBrush(RGB(255, 0, 0));
+	LoadJpg(PTH_ALBEDO_TEXTURE, &albedoBuffer);
+	LoadPng(PTH_NORMALS_TEXTURE, &normalsBuffer);
+	LoadJpg(PTH_AMBIENT_TEXTURE, &ambientBuffer);
+	LoadJpg(PTH_SPECULAR_TEXTURE, &specularBuffer);
+	hbrBackground = CreateSolidBrush(COLOR_BCKGRD);
 }
 
 void FreeAllResources()
@@ -528,59 +667,110 @@ void interpolateVector(gsl_vector* firstVector, gsl_vector* secondVector, double
       gsl_vector_scale(interpolatedVector, 1.0 / gsl_blas_dnrm2(interpolatedVector));
 }
 
+void interpolateTexture(PARAMS *pThreadParams, gsl_vector* firstVector, gsl_vector* secondVector, double rotationPercent, gsl_vector* interpolatedVector)
+{
+	double z0 = pThreadParams->pA->data[2];
+	double z1 = pThreadParams->pB->data[2];
+
+	gsl_vector_memcpy(interpolatedVector, secondVector);
+	gsl_vector_memcpy(pThreadParams->pResult, firstVector);
+	gsl_vector_scale(interpolatedVector, 1.0 / z1);
+	gsl_vector_scale(pThreadParams->pResult, 1.0 / z0);
+
+    gsl_vector_sub(interpolatedVector, pThreadParams->pResult);
+    gsl_vector_scale(interpolatedVector, rotationPercent);
+    gsl_vector_add(interpolatedVector, pThreadParams->pResult);
+	gsl_vector_scale(interpolatedVector, 1.0 / ((1.0 - rotationPercent) / z0 + rotationPercent / z1));
+}
+
 void calculateSideScanlinePoints(PARAMS *p, double alpha, BOOL second_half, double beta) {
 
     interpolateVector(p->pV0, p->pV2, alpha, p->pA, FALSE);
+    // interpolateVector(p->pVT0, p->pVT2, alpha, p->pAT, FALSE);
     interpolateVector(p->pVs0, p->pVs2, alpha, p->pAs, FALSE);
+	interpolateTexture(p, p->pVT0, p->pVT2, alpha, p->pAT);
     interpolateVector(p->pVN0, p->pVN2, alpha, p->pAN, TRUE);
 
     if (second_half)
     {
         interpolateVector(p->pV1, p->pV2, beta, p->pB, FALSE);
+        // interpolateVector(p->pVT1, p->pVT2, beta, p->pBT, FALSE);
         interpolateVector(p->pVs1, p->pVs2, beta, p->pBs, FALSE);
+		interpolateTexture(p, p->pVT1, p->pVT2, beta, p->pBT);
         interpolateVector(p->pVN1, p->pVN2, beta, p->pBN, TRUE);
     }
     else
     {
         interpolateVector(p->pV0, p->pV1, beta, p->pB, FALSE);
+        // interpolateVector(p->pVT0, p->pVT1, beta, p->pBT, FALSE);
         interpolateVector(p->pVs0, p->pVs1, beta, p->pBs, FALSE);
+		interpolateTexture(p, p->pVT0, p->pVT1, beta, p->pBT);
         interpolateVector(p->pVN0, p->pVN1, beta, p->pBN, TRUE);
     }
 }
 
-inline void DrawTriangleIl(PARAMS *pThreadParams, int index)
+void DrawTriangleIl(PARAMS *pThreadParams, int index)
 {
-
     gsl_vector_int *pTriangleVertices = pObjFile->fv->data[index];
+	gsl_vector_int *pnTriangleVertices = pObjFile->fvn->data[index];
+	gsl_vector_int *ptTriangleVertices = pObjFile->fvt->data[index];
+
     if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
 
-    gsl_vector_memcpy(pThreadParams->pVN0, pObjFile->vn->data[pTriangleVertices->data[0]]); //<!-- can be moved into resource initialization ferther
-    gsl_vector_memcpy(pThreadParams->pVN1, pObjFile->vn->data[pTriangleVertices->data[1]]); //<!-- can be moved into resource initialization ferther
-    gsl_vector_memcpy(pThreadParams->pVN2, pObjFile->vn->data[pTriangleVertices->data[2]]); //<!-- can be moved into resource initialization ferther
+    gsl_vector_memcpy(pThreadParams->pVN0, pObjFile->vn->data[pnTriangleVertices->data[0]]);
+    gsl_vector_memcpy(pThreadParams->pVN1, pObjFile->vn->data[pnTriangleVertices->data[1]]); 
+    gsl_vector_memcpy(pThreadParams->pVN2, pObjFile->vn->data[pnTriangleVertices->data[2]]); 
 
-    gsl_vector_memcpy(pThreadParams->pVs0, pObjFile->v->data[pTriangleVertices->data[0]]); //<!-- can be moved into resource initialization ferther
-    gsl_vector_memcpy(pThreadParams->pVs1, pObjFile->v->data[pTriangleVertices->data[1]]); //<!-- can be moved into resource initialization ferther
-    gsl_vector_memcpy(pThreadParams->pVs2, pObjFile->v->data[pTriangleVertices->data[2]]); //<!-- can be moved into resource initialization ferther
+    gsl_vector_memcpy(pThreadParams->pVs0, pObjFile->v->data[pTriangleVertices->data[0]]); 
+    gsl_vector_memcpy(pThreadParams->pVs1, pObjFile->v->data[pTriangleVertices->data[1]]); 
+    gsl_vector_memcpy(pThreadParams->pVs2, pObjFile->v->data[pTriangleVertices->data[2]]); 
+    
+	gsl_vector_memcpy(pThreadParams->pVT0, pObjFile->vt->data[ptTriangleVertices->data[0]]); 
+    gsl_vector_memcpy(pThreadParams->pVT1, pObjFile->vt->data[ptTriangleVertices->data[1]]); 
+    gsl_vector_memcpy(pThreadParams->pVT2, pObjFile->vt->data[ptTriangleVertices->data[2]]); 
 
 	gsl_vector_memcpy(pThreadParams->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
 	gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
 	gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
+
+	// HELP!!! HELP!!! HELP!!!
+	gsl_vector_memcpy(pThreadParams->pE1, pThreadParams->pVs1);
+	gsl_vector_sub(pThreadParams->pE1, pThreadParams->pVs0);
+	gsl_vector_memcpy(pThreadParams->pE2, pThreadParams->pVs2);
+	gsl_vector_sub(pThreadParams->pE2, pThreadParams->pVs0);
+	gsl_vector_memcpy(pThreadParams->pUV1, pThreadParams->pVT1);
+	gsl_vector_sub(pThreadParams->pUV1, pThreadParams->pVT0);
+	gsl_vector_memcpy(pThreadParams->pUV2, pThreadParams->pVT2);
+	gsl_vector_sub(pThreadParams->pUV2, pThreadParams->pVT0);
+
+	vector_cross_product3(pThreadParams->pE1, pThreadParams->pE2, pThreadParams->pNormal);
+	gsl_vector_scale(pThreadParams->pNormal, 1.0 / gsl_blas_dnrm2(pThreadParams->pNormal));
+
+	double f = 1.0 / (pThreadParams->pUV1->data[0] * pThreadParams->pUV2->data[1] - pThreadParams->pUV2->data[0] * pThreadParams->pUV1->data[1]);
+	pThreadParams->pTangent->data[0] = f * (pThreadParams->pUV2->data[1] * pThreadParams->pE1->data[0] - pThreadParams->pUV1->data[1] * pThreadParams->pE2->data[0]);
+	pThreadParams->pTangent->data[1] = f * (pThreadParams->pUV2->data[1] * pThreadParams->pE1->data[1] - pThreadParams->pUV1->data[1] * pThreadParams->pE2->data[1]);
+	pThreadParams->pTangent->data[2] = f * (pThreadParams->pUV2->data[1] * pThreadParams->pE1->data[2] - pThreadParams->pUV1->data[1] * pThreadParams->pE2->data[2]);
+	gsl_vector_scale(pThreadParams->pTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pTangent));
+
     if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) {
 
-      gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV1); //<!-- sgsl_vactor_swap exist
+      gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV1); 
       gsl_vector_swap(pThreadParams->pVN0, pThreadParams->pVN1);
       gsl_vector_swap(pThreadParams->pVs0, pThreadParams->pVs1);
+      gsl_vector_swap(pThreadParams->pVT0, pThreadParams->pVT1);
     }
     if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) {
       gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV2);
       gsl_vector_swap(pThreadParams->pVN0, pThreadParams->pVN2);
       gsl_vector_swap(pThreadParams->pVs0, pThreadParams->pVs2);
+      gsl_vector_swap(pThreadParams->pVT0, pThreadParams->pVT2);
     }
     if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) {
       gsl_vector_swap(pThreadParams->pV1, pThreadParams->pV2);
       gsl_vector_swap(pThreadParams->pVN1, pThreadParams->pVN2);
       gsl_vector_swap(pThreadParams->pVs1, pThreadParams->pVs2);
+      gsl_vector_swap(pThreadParams->pVT1, pThreadParams->pVT2);
     }
 
     for (int i = 0; i < 2; i++)
@@ -594,6 +784,9 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, int index)
 
 	int total_height = pThreadParams->pV2->data[1] - pThreadParams->pV0->data[1];
 
+	vector_cross_product3(pThreadParams->pNormal, pThreadParams->pTangent, pThreadParams->pBTangent);
+	gsl_vector_scale(pThreadParams->pBTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pBTangent)); 
+	
     for (int i=0; i<total_height; i++) {
         BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
         int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
@@ -612,6 +805,7 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, int index)
         if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) {
            gsl_vector_swap(pThreadParams->pA, pThreadParams->pB);
            gsl_vector_swap(pThreadParams->pAs, pThreadParams->pBs);
+           gsl_vector_swap(pThreadParams->pAT, pThreadParams->pBT);
            gsl_vector_swap(pThreadParams->pAN, pThreadParams->pBN);
         }
 
@@ -625,21 +819,54 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, int index)
 
             interpolateVector(pThreadParams->pA, pThreadParams->pB, phi, pThreadParams->pP, FALSE);
             interpolateVector(pThreadParams->pAs, pThreadParams->pBs, phi, pThreadParams->pPs, FALSE);
+            // interpolateVector(pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT, FALSE);
+			interpolateTexture(pThreadParams, pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT);
             interpolateVector(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN, TRUE);
 
 			offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
 			int idx = j+(pThreadParams->pV0->data[1] + i)*bmp.bmWidth;
-			
+
 			EnterCriticalSection(zBufferCS + idx);
 			if (zBuffer[idx] > pThreadParams->pP->data[2]) {
 				zBuffer[idx] = pThreadParams->pP->data[2];
-
+				
+				int globalTextureIDX = (4096 * (int)(4096 - 4096 * pThreadParams->pPT->data[1]) + (int)(pThreadParams->pPT->data[0] * 4096));
+				int normalIDX = globalTextureIDX * 3;
+				int colorIDX = globalTextureIDX * 3;
                 double lambertian = 0.0;
-                double shininessVal = 80.0;
+                double shininessVal = 20;
                 double specular = 0.0;
+				double temp = 0;
+				
+				gsl_vector_memcpy(pThreadParams->pNormal, pThreadParams->pPN);
+				gsl_vector_memcpy(pThreadParams->pResult, pThreadParams->pTangent);
+				gsl_blas_ddot(pThreadParams->pResult, pThreadParams->pNormal, &temp);
+				gsl_vector_scale(pThreadParams->pPN, temp);
+				gsl_vector_sub(pThreadParams->pResult, pThreadParams->pPN);
+				gsl_vector_scale(pThreadParams->pTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pTangent));
+				vector_cross_product3(pThreadParams->pNormal, pThreadParams->pTangent, pThreadParams->pBTangent);
+				gsl_vector_scale(pThreadParams->pBTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pBTangent)); 
+				
+				gsl_vector_set(pThreadParams->pPN, 0, (double)normalsBuffer[normalIDX + 0]/255.0);
+				gsl_vector_set(pThreadParams->pPN, 1, (double)normalsBuffer[normalIDX + 1]/255.0);
+				gsl_vector_set(pThreadParams->pPN, 2, (double)normalsBuffer[normalIDX + 2]/255.0);
 
-								gsl_vector* L = pThreadParams->L;
+				gsl_vector_scale(pThreadParams->pPN, 2.0);
+				gsl_vector_add_constant(pThreadParams->pPN, -1.0);
+				gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
+
+				gsl_vector* L = pThreadParams->L;
                 gsl_vector_memcpy(L, eye);
+
+				gsl_blas_dgemv(CblasTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPN, 0, pThreadParams->pResult);
+				gsl_vector_memcpy(pThreadParams->pPN, pThreadParams->pResult);
+				gsl_vector_set(pThreadParams->pPN, 3, 0);
+				gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
+				// gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->L, 0, pThreadParams->pResult);
+				// gsl_vector_memcpy(pThreadParams->L, pThreadParams->pResult);
+				// gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPs, 0, pThreadParams->pResult);
+				// gsl_vector_memcpy(pThreadParams->pPs, pThreadParams->pResult);
+
                 gsl_vector_sub(L, pThreadParams->pPs);
                 gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
@@ -647,18 +874,28 @@ inline void DrawTriangleIl(PARAMS *pThreadParams, int index)
                 lambertian = max(lambertian, 0.0f);
 
                 if(lambertian > 0.0) {
-
                   gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
                   gsl_vector_sub(pThreadParams->pPN, L);
                   
                   gsl_blas_ddot(pThreadParams->pPN, L, &specular);
                   specular = pow(max(specular, 0.0f), shininessVal);
-
                 }
-
-                pBytes[offset + 0] = min(((lambertian * 204) + 52 + (specular * 255)), 255); 
-                pBytes[offset + 1] = min(((lambertian * 102) + 25 + (specular * 255)), 255);
-                pBytes[offset + 2] = min(((lambertian * 0) + 0 + (specular * 255)), 255);   
+				
+                // pBytes[offset + 0] = albedoBuffer[normalIDX + 2];
+                // pBytes[offset + 1] = albedoBuffer[normalIDX + 1]; 
+                // pBytes[offset + 2] = albedoBuffer[normalIDX + 0];  
+                // pBytes[offset + 0] = specularBuffer[normalIDX + 2];
+                // pBytes[offset + 1] = specularBuffer[normalIDX + 1]; 
+                // pBytes[offset + 2] = specularBuffer[normalIDX + 0];  
+                // pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 2]/255.0 + albedoBuffer[colorIDX + 2] * lambertian + 0.2 * specularBuffer[colorIDX + 2], 255);
+                // pBytes[offset + 1] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 1]/255.0 + albedoBuffer[colorIDX + 1] * lambertian + 0.2 * specularBuffer[colorIDX + 1], 255); 
+                // pBytes[offset + 2] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 0]/255.0 + albedoBuffer[colorIDX + 0] * lambertian + 0.2 * specularBuffer[colorIDX + 0], 255);  
+                pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] * lambertian + 255*specular, 255);
+                pBytes[offset + 1] = min(albedoBuffer[colorIDX + 1] * lambertian + 255*specular, 255); 
+                pBytes[offset + 2] = min(albedoBuffer[colorIDX + 0] * lambertian + 255*specular, 255);  
+                // pBytes[offset + 0] = min(, 255); 
+                // pBytes[offset + 1] = min(, 255);
+                // pBytes[offset + 2] = min(, 255);   
             }
             LeaveCriticalSection(zBufferCS+idx);
         }
@@ -710,7 +947,7 @@ void DrawProc(HDC hdc)
 	
 	for (int i = 0; i < bmp.bmWidth * bmp.bmHeight; i++)
 	{
-		zBuffer[i] = 100;
+		zBuffer[i] = 1000;
 	}
 	gsl_vector_memcpy(light, target);
 	gsl_vector_sub(light, eye);
@@ -801,6 +1038,20 @@ void MoveProc()
 		gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (cameraSpeed));
 		gsl_vector_add(eye, xAxis);
 		gsl_vector_add(target, xAxis);
+	}
+
+	if (keys[VK_UP])
+	{
+		gsl_vector_set_basis(pResult, 1);
+		gsl_vector_scale(pResult, cameraSpeed);
+		gsl_vector_add(target, pResult);
+	}
+
+	if (keys[VK_DOWN])
+	{
+		gsl_vector_set_basis(pResult, 1);
+		gsl_vector_scale(pResult, -cameraSpeed);
+		gsl_vector_add(target, pResult);
 	}
 
 	lastTime = GetTickCount();

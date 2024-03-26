@@ -71,6 +71,8 @@ void* vSParce(char *string)
     char *token;
     int index = 0;
 
+    pVector->data[3] = 1.0;
+
     while ((token = strtok(NULL, PARSER_COMPONENTS_DELIMETER)) != NULL)
     {
         _atodbl(&dbval, token); 
