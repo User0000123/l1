@@ -37,11 +37,13 @@
 #define PTH_NORMALS_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_normal.png"
 #define PTH_SPECULAR_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_roughness.jpg"
 
+#define PTH_FLOOR_FILE		"C:\\Users\\Aleksej\\Downloads\\model\\floor.obj"
+#define PTH_FLOOR_TEXTURE 	"C:\\Users\\Aleksej\\Downloads\\model\\textures\\floor.jpg"
 
 #define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
 //#define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
 #define BACKGROUND_BRUSH    BLACK_BRUSH
-#define COLOR_BCKGRD		RGB(0, 0, 0)
+#define COLOR_BCKGRD		RGB(177, 125, 45)
 #define COLOR_IMAGE         RGB(255, 255, 255)
 
 #define TIMER_REPAINT_ID 1
@@ -83,6 +85,7 @@ byte *ambientBuffer;
 byte *albedoBuffer;
 byte *normalsBuffer;
 byte *specularBuffer;
+byte *floorBuffer;
 
 /* Model temp vertices */
 gsl_vector **gvWorldVertices;
@@ -132,15 +135,15 @@ byte keys[255];
 #define N_PARAMS 24
 HTHDPOOL hPool;
 typedef struct {
-    HDC dc;
-    int from;
-    int to;
-    gsl_vector *pV0;
-    gsl_vector *pV1;
-    gsl_vector *pV2;
-    gsl_vector *pVs0;
-    gsl_vector *pVs1;
-    gsl_vector *pVs2;
+	HDC dc;
+	int from;
+	int to;
+	gsl_vector *pV0;
+	gsl_vector *pV1;
+	gsl_vector *pV2;
+	gsl_vector *pVs0;
+	gsl_vector *pVs1;
+	gsl_vector *pVs2;
 
 	gsl_vector *pAT;
 	gsl_vector *pBT;
@@ -158,19 +161,19 @@ typedef struct {
 	gsl_vector *pUV2;
 	gsl_vector *pResult;
 
-    gsl_vector *pA;
-    gsl_vector *pB;
-    gsl_vector *pP;
-    gsl_vector *pAs;
-    gsl_vector *pBs;
-    gsl_vector *pPs;
-    gsl_vector *norm;
-    gsl_vector *pVN0;
-    gsl_vector *pVN1;
-    gsl_vector *pVN2;
-    gsl_vector *pAN;
-    gsl_vector *pBN;
-    gsl_vector *pPN;
+	gsl_vector *pA;
+	gsl_vector *pB;
+	gsl_vector *pP;
+	gsl_vector *pAs;
+	gsl_vector *pBs;
+	gsl_vector *pPs;
+	gsl_vector *norm;
+	gsl_vector *pVN0;
+	gsl_vector *pVN1;
+	gsl_vector *pVN2;
+	gsl_vector *pAN;
+	gsl_vector *pBN;
+	gsl_vector *pPN;
 	gsl_vector *L;
 
 } PARAMS;
@@ -184,27 +187,30 @@ volatile LONG count;
 
 /* Arrays for wrapper matrices */
 double translViewPort[] =
-    {
-        R, 0, 0, R,
-        0, R, 0, R,
-        0, 0, 1, 0,
-        0, 0, 0, 1};
+	{
+		R, 0, 0, R,
+		0, R, 0, R,
+		0, 0, 1, 0,
+		0, 0, 0, 1};
 
 double translProjection[] =
-    {
-        2.0 * Z_NEAR / 2.0, 0, 0, 0,
-        0, 2.0 * Z_NEAR / 2.0, 0, 0,
-        0, 0, (double)Z_FAR / (Z_NEAR - Z_FAR), (double)Z_NEAR *Z_FAR / (Z_NEAR - Z_FAR),
-        0, 0, -1, 0};
+	{
+		2.0 * Z_NEAR / 2.0, 0, 0, 0,
+		0, 2.0 * Z_NEAR / 2.0, 0, 0,
+		0, 0, (double)Z_FAR / (Z_NEAR - Z_FAR), (double)Z_NEAR *Z_FAR / (Z_NEAR - Z_FAR),
+		0, 0, -1, 0};
 
 double translView[] =
-    {
-        R, R, R, R,
-        R, R, R, R,
-        R, R, R, R,
-        0, 0, 0, 1};
+	{
+		R, R, R, R,
+		R, R, R, R,
+		R, R, R, R,
+		0, 0, 0, 1};
 
 double shininessVal = 80.0;
+
+	/* Debug variables */
+int floorFaceIndex;
 
 inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *result)
 {
@@ -216,94 +222,94 @@ inline void vector_cross_product3(gsl_vector *v1, gsl_vector *v2, gsl_vector *re
 inline int isInside(gsl_vector *pPoint)
 {
   return ((pPoint->data[0] > -pPoint->data[3] && pPoint->data[0] < pPoint->data[3]) &&
-          (pPoint->data[1] > -pPoint->data[3] && pPoint->data[1] < pPoint->data[3]) &&
-          (pPoint->data[2] > 0 && pPoint->data[2] < pPoint->data[3]));
+		  (pPoint->data[1] > -pPoint->data[3] && pPoint->data[1] < pPoint->data[3]) &&
+		  (pPoint->data[2] > 0 && pPoint->data[2] < pPoint->data[3]));
 }
 
 void LoadJpg(char *textureFileName, byte **colorBuffer)
 {
 	FILE *textureFile;
 	struct jpeg_decompress_struct cinfo;
-    struct jpeg_error_mgr jerr;
-    unsigned long buffer_size;
+	struct jpeg_error_mgr jerr;
+	unsigned long buffer_size;
 
-    // Open the JPEG file
-    textureFile = fopen(textureFileName, "rb");
-    if (!textureFile) {
-        fprintf(stderr, "Failed to open image file\n");
-        return;
-    }
+	// Open the JPEG file
+	textureFile = fopen(textureFileName, "rb");
+	if (!textureFile) {
+		fprintf(stderr, "Failed to open image file\n");
+		return;
+	}
 
-    // Initialize the JPEG decompression object
-    cinfo.err = jpeg_std_error(&jerr);
-    jpeg_create_decompress(&cinfo);
+	// Initialize the JPEG decompression object
+	cinfo.err = jpeg_std_error(&jerr);
+	jpeg_create_decompress(&cinfo);
 
-    // Specify the source file
-    jpeg_stdio_src(&cinfo, textureFile);
+	// Specify the source file
+	jpeg_stdio_src(&cinfo, textureFile);
 
-    // Read the JPEG header
-    (void)jpeg_read_header(&cinfo, TRUE);
+	// Read the JPEG header
+	(void)jpeg_read_header(&cinfo, TRUE);
 
-    // Start the decompression process
-    (void)jpeg_start_decompress(&cinfo);
+	// Start the decompression process
+	(void)jpeg_start_decompress(&cinfo);
 
-    // Calculate buffer size
-    buffer_size = cinfo.output_width * cinfo.output_height * cinfo.output_components;
+	// Calculate buffer size
+	buffer_size = cinfo.output_width * cinfo.output_height * cinfo.output_components;
 
-    // Allocate memory for the buffer
-    *colorBuffer = (byte *)malloc(buffer_size);
+	// Allocate memory for the buffer
+	*colorBuffer = (byte *)malloc(buffer_size);
 	byte *bufarray = *colorBuffer;
 
-    // Read scanlines and copy to buffer
-    JSAMPROW row_pointer[1];
-    unsigned long offset = 0;
-    while (cinfo.output_scanline < cinfo.output_height) {
-        row_pointer[0] = &bufarray[offset];
-        (void)jpeg_read_scanlines(&cinfo, row_pointer, 1);
-        offset += cinfo.output_width * cinfo.output_components;
-    }
+	// Read scanlines and copy to buffer
+	JSAMPROW row_pointer[1];
+	unsigned long offset = 0;
+	while (cinfo.output_scanline < cinfo.output_height) {
+		row_pointer[0] = &bufarray[offset];
+		(void)jpeg_read_scanlines(&cinfo, row_pointer, 1);
+		offset += cinfo.output_width * cinfo.output_components;
+	}
 
-    // Finish the decompression process
-    (void)jpeg_finish_decompress(&cinfo);
+	// Finish the decompression process
+	(void)jpeg_finish_decompress(&cinfo);
 
-    // Clean up the JPEG decompression object
-    jpeg_destroy_decompress(&cinfo);
+	// Clean up the JPEG decompression object
+	jpeg_destroy_decompress(&cinfo);
 
-    // Close the file
-    fclose(textureFile);
+	// Close the file
+	fclose(textureFile);
 }
 
 void LoadPng(char* filename, byte** buffer) {
-    FILE* fp = fopen(filename, "rb");
+	FILE* fp = fopen(filename, "rb");
 	int height;
 	int width;
 
-    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    png_infop info_ptr = png_create_info_struct(png_ptr);
+	png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	png_infop info_ptr = png_create_info_struct(png_ptr);
 
-    png_init_io(png_ptr, fp);
-    png_read_info(png_ptr, info_ptr);
+	png_init_io(png_ptr, fp);
+	png_read_info(png_ptr, info_ptr);
 
-    png_byte color_type = png_get_color_type(png_ptr, info_ptr);
-    png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+	png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+	png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
 
-    // Allocate memory for the buffer
-    size_t row_bytes = png_get_rowbytes(png_ptr, info_ptr);
+	// Allocate memory for the buffer
+	size_t row_bytes = png_get_rowbytes(png_ptr, info_ptr);
 	width = png_get_image_width(png_ptr, info_ptr);
 	height = png_get_image_height(png_ptr, info_ptr);
-    *buffer = (unsigned char*)malloc(width * height * 3);
+	*buffer = (unsigned char*)malloc(width * height * 3);
 
-    png_bytepp row_pointers = (png_bytepp)malloc(width * sizeof(png_bytep));
-    for (int y = 0; y < height; y++) {
-        row_pointers[y] = (*buffer) + (y * row_bytes);
-    }
+	png_bytepp row_pointers = (png_bytepp)malloc(width * sizeof(png_bytep));
+	for (int y = 0; y < height; y++) {
+		row_pointers[y] = (*buffer) + (y * row_bytes);
+	}
 
-    png_read_image(png_ptr, row_pointers);
+	png_read_image(png_ptr, row_pointers);
 
-    // Clean up
-    fclose(fp);
-    free(row_pointers);
-    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+	// Clean up
+	fclose(fp);
+	free(row_pointers);
+	png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
 }
 
 void ApplyTransformations()
@@ -323,9 +329,9 @@ void ApplyTransformations()
 
   for (int i = 0; i < 3; i++)
   {
-    translView[i] = xAxis->data[i];
-    translView[4 + i] = yAxis->data[i];
-    translView[8 + i] = zAxis->data[i];
+	translView[i] = xAxis->data[i];
+	translView[4 + i] = yAxis->data[i];
+	translView[8 + i] = zAxis->data[i];
   }
 
   gsl_blas_ddot(xAxis, eye, translView + 3);
@@ -333,7 +339,7 @@ void ApplyTransformations()
   gsl_blas_ddot(zAxis, eye, translView + 11);
   for (int i = 0; i < 3; i++)
   {
-    translView[4 * i + 3] *= -1;
+	translView[4 * i + 3] *= -1;
   }
   ///////////////////////////////////////////////
 
@@ -348,17 +354,18 @@ void ApplyTransformations()
 
   for (int i = 1; i < pObjFile->v->nCurSize; i++)
   {
-    gsl_vector *pVector = gvPaintVertices[i];
+	gsl_vector *pVector = gvPaintVertices[i];
+	double w;
+	gsl_blas_dgemv(CblasNoTrans, 1.0, matrixTransformation, pVector, 0, pResult);
 
-    gsl_blas_dgemv(CblasNoTrans, 1.0, matrixTransformation, pVector, 0, pResult);
-
-    if (pIsDrawable[i] = isInside(pResult))
-    {
-      gsl_vector_memcpy(pVector, pResult);
-      gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
-      gsl_vector_memcpy(pVector, pResult);
-      gsl_vector_scale(pVector, 1.0 / gsl_vector_get(pVector, 3));
-    }
+	if (pIsDrawable[i] = isInside(pResult))
+	{
+		gsl_vector_memcpy(pVector, pResult);
+		gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
+		gsl_vector_memcpy(pVector, pResult);
+		gsl_vector_scale(pVector, 1.0 / (w = gsl_vector_get(pVector, 3)));
+		pVector->data[3] = w;
+	}
   }
 }
 
@@ -386,6 +393,54 @@ void InitializeResources()
   gsl_vector_set_basis(up, 1);
   target = gsl_vector_calloc(4);
 
+	// floor
+	FILE *pFloor;
+	ObjFile *pObjFloor;
+	pFloor = fopen(PTH_FLOOR_FILE, "r");
+	pObjFloor = parseOBJ(pFloor);
+	floorFaceIndex = pObjFile->fv->nCurSize;
+
+	for (int i = 1; i < pObjFloor->v->nCurSize; i++)
+	{
+		Add(pObjFile->v, pObjFloor->v->data[i]);
+	}
+	for (int i = 1; i < pObjFloor->vn->nCurSize; i++)
+	{
+		Add(pObjFile->vn, pObjFloor->vn->data[i]);
+	}
+	for (int i = 1; i < pObjFloor->vt->nCurSize; i++)
+	{
+		Add(pObjFile->vt, pObjFloor->vt->data[i]);
+	}
+	for (int i = 1; i < 3; i++)
+	{
+		gsl_vector_int *pVector = gsl_vector_int_calloc(3);
+		gsl_vector_int_set(pVector, 0, pObjFile->v->nCurSize - 4);
+		gsl_vector_int_set(pVector, 1, pObjFile->v->nCurSize - (4 - i));
+		gsl_vector_int_set(pVector, 2, pObjFile->v->nCurSize - (3 - i));
+
+		Add(pObjFile->fv, pVector);
+	}
+	for (int i = 1; i < 3; i++)
+	{
+		gsl_vector_int *pVector = gsl_vector_int_calloc(3);
+		gsl_vector_int_set_all(pVector, pObjFile->vn->nCurSize - 1);
+
+		Add(pObjFile->fvn, pVector);
+	}
+	for (int i = 1; i < 3; i++)
+	{
+		gsl_vector_int *pVector = gsl_vector_int_calloc(3);
+		gsl_vector_int_set(pVector, 0, pObjFile->vt->nCurSize - 4);
+		gsl_vector_int_set(pVector, 1, pObjFile->vt->nCurSize - (4 - i));
+		gsl_vector_int_set(pVector, 2, pObjFile->vt->nCurSize - (3 - i));
+
+		Add(pObjFile->fvt, pVector);
+	}
+	LoadJpg(PTH_FLOOR_TEXTURE, &floorBuffer);
+	TrimObjFileArrays(pObjFile);
+	fclose(pFloor);
+
   gbWorldVertices = gsl_block_alloc(pObjFile->v->nCurSize * 4);
   gbPaintVertices = gsl_block_alloc(pObjFile->v->nCurSize * 4);
 
@@ -394,9 +449,9 @@ void InitializeResources()
 
   for (int i = 1; i < pObjFile->v->nCurSize; i++)
   {
-    gvPaintVertices[i] = gsl_vector_alloc_from_block(gbPaintVertices, i * 4, 4, 1);
-    gvWorldVertices[i] = gsl_vector_alloc_from_block(gbWorldVertices, i * 4, 4, 1);
-    gsl_vector_memcpy(gvWorldVertices[i], pObjFile->v->data[i]);
+	gvPaintVertices[i] = gsl_vector_alloc_from_block(gbPaintVertices, i * 4, 4, 1);
+	gvWorldVertices[i] = gsl_vector_alloc_from_block(gbWorldVertices, i * 4, 4, 1);
+	gsl_vector_memcpy(gvWorldVertices[i], pObjFile->v->data[i]);
   }
 
   pIsDrawable = calloc(pObjFile->v->nCurSize + 1, sizeof(byte));
@@ -416,27 +471,27 @@ void InitializeResources()
 
   light = gsl_vector_calloc(4);
 
-    for (int i = 0; i < N_PARAMS; i++)
-    {
-        params[i].pV0 = gsl_vector_calloc(4);
-        params[i].pV1 = gsl_vector_calloc(4); 
-        params[i].pV2 = gsl_vector_calloc(4);
-        params[i].pVs0 = gsl_vector_calloc(4);
-        params[i].pVs1 = gsl_vector_calloc(4);
-        params[i].pVs2 = gsl_vector_calloc(4);
-        params[i].pA = gsl_vector_calloc(4);
-        params[i].pB = gsl_vector_calloc(4);
-        params[i].pP = gsl_vector_calloc(4);
-        params[i].pAs = gsl_vector_calloc(4);
-        params[i].pBs = gsl_vector_calloc(4);
-        params[i].pPs = gsl_vector_calloc(4);
-        params[i].norm = gsl_vector_calloc(4);
-        params[i].pVN0 = gsl_vector_calloc(4);
-        params[i].pVN1 = gsl_vector_calloc(4); 
-        params[i].pVN2 = gsl_vector_calloc(4);
-        params[i].pAN = gsl_vector_alloc(4);
-        params[i].pBN = gsl_vector_alloc(4);
-        params[i].pPN = gsl_vector_alloc(4);
+	for (int i = 0; i < N_PARAMS; i++)
+	{
+		params[i].pV0 = gsl_vector_calloc(4);
+		params[i].pV1 = gsl_vector_calloc(4); 
+		params[i].pV2 = gsl_vector_calloc(4);
+		params[i].pVs0 = gsl_vector_calloc(4);
+		params[i].pVs1 = gsl_vector_calloc(4);
+		params[i].pVs2 = gsl_vector_calloc(4);
+		params[i].pA = gsl_vector_calloc(4);
+		params[i].pB = gsl_vector_calloc(4);
+		params[i].pP = gsl_vector_calloc(4);
+		params[i].pAs = gsl_vector_calloc(4);
+		params[i].pBs = gsl_vector_calloc(4);
+		params[i].pPs = gsl_vector_calloc(4);
+		params[i].norm = gsl_vector_calloc(4);
+		params[i].pVN0 = gsl_vector_calloc(4);
+		params[i].pVN1 = gsl_vector_calloc(4); 
+		params[i].pVN2 = gsl_vector_calloc(4);
+		params[i].pAN = gsl_vector_alloc(4);
+		params[i].pBN = gsl_vector_alloc(4);
+		params[i].pPN = gsl_vector_alloc(4);
 		params[i].L = gsl_vector_alloc(4);
 
 		params[i].pAT = gsl_vector_alloc(4);
@@ -454,7 +509,7 @@ void InitializeResources()
 		params[i].pE2 = gsl_vector_alloc(4);
 		params[i].pUV1 = gsl_vector_alloc(4);
 		params[i].pUV2 = gsl_vector_alloc(4);
-    }
+	}
 
 	LoadJpg(PTH_ALBEDO_TEXTURE, &albedoBuffer);
 	LoadPng(PTH_NORMALS_TEXTURE, &normalsBuffer);
@@ -477,13 +532,13 @@ void FreeAllResources()
 
   for (int i = 0; i < N_PARAMS; i++)
   {
-    gsl_vector_free(params[i].pA);
-    gsl_vector_free(params[i].pB);
-    gsl_vector_free(params[i].pV0);
-    gsl_vector_free(params[i].pV1);
-    gsl_vector_free(params[i].pV2);
-    gsl_vector_free(params[i].pP);
-    gsl_vector_free(params[i].norm);
+	gsl_vector_free(params[i].pA);
+	gsl_vector_free(params[i].pB);
+	gsl_vector_free(params[i].pV0);
+	gsl_vector_free(params[i].pV1);
+	gsl_vector_free(params[i].pV2);
+	gsl_vector_free(params[i].pP);
+	gsl_vector_free(params[i].norm);
   }
 
   free(pResult);
@@ -511,19 +566,19 @@ inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1, byte r, byte g, byt
   BOOL isTranspose = FALSE;
 
   if (x0 < 0 || x1 < 0 || x0 >= bmp.bmWidth || x1 >= bmp.bmWidth || y0 < 0 || y1 < 0 || y0 >= bmp.bmHeight || y1 >= bmp.bmHeight)
-    return;
+	return;
 
   if (abs(x1 - x0) < abs(y1 - y0))
   {
-    SWAP(x0, y0);
-    SWAP(x1, y1);
-    isTranspose = TRUE;
+	SWAP(x0, y0);
+	SWAP(x1, y1);
+	isTranspose = TRUE;
   }
 
   if (x0 > x1)
   {
-    SWAP(x0, x1);
-    SWAP(y0, y1);
+	SWAP(x0, x1);
+	SWAP(y0, y1);
   }
 
   int dx = x1 - x0;
@@ -537,23 +592,23 @@ inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1, byte r, byte g, byt
 
   for (int x = x0, y = y0; x <= x1; x++)
   {
-    offset = (y * bmWidth + x) << 2;
-    if (isTranspose)
-    {
-      offset = (x * bmWidth + y) << 2;
-    }
-    pBytes[offset + 0] = r;
-    pBytes[offset + 1] = g;
-    pBytes[offset + 2] = b;
-    // InterlockedOr((long *)(pBytes + offset), 0x00FFFFFF);
+	offset = (y * bmWidth + x) << 2;
+	if (isTranspose)
+	{
+	  offset = (x * bmWidth + y) << 2;
+	}
+	pBytes[offset + 0] = r;
+	pBytes[offset + 1] = g;
+	pBytes[offset + 2] = b;
+	// InterlockedOr((long *)(pBytes + offset), 0x00FFFFFF);
 
-    error += derror;
+	error += derror;
 
-    if (error > dx)
-    {
-      y += signY;
-      error -= dxDouble;
-    }
+	if (error > dx)
+	{
+	  y += signY;
+	  error -= dxDouble;
+	}
   }
 }
 
@@ -570,90 +625,90 @@ inline void DrawLine(HDC dc, int x0, int y0, int x1, int y1, byte r, byte g, byt
 inline void DrawTriangle(PARAMS *pThreadParams, HDC dc, gsl_vector_int *pTriangleVertices, byte r, byte g, byte b)
 {
   if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]]))
-    return;
+	return;
 
   gsl_vector_memcpy(pThreadParams->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
   gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
   gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
   if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1])
-    gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV1); //<!-- gsl_vactor_swap exists
+	gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV1); //<!-- gsl_vactor_swap exists
   if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1])
-    gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV2);
+	gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV2);
   if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1])
-    gsl_vector_swap(pThreadParams->pV1, pThreadParams->pV2);
+	gsl_vector_swap(pThreadParams->pV1, pThreadParams->pV2);
 
   for (int i = 0; i < 2; i++)
   {
-    pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
-    pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
-    pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
+	pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
+	pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
+	pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
   }
   if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1)
-    return; //<!-- realy need this? it is validation of .obj file actually
+	return; //<!-- realy need this? it is validation of .obj file actually
 
   int total_height = pThreadParams->pV2->data[1] - pThreadParams->pV0->data[1];
 
   for (int i = 0; i < total_height; i++)
   {
-    BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
-    int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
-    double alpha = (double)i / total_height;
-    double beta = (double)(i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
+	BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
+	int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
+	double alpha = (double)i / total_height;
+	double beta = (double)(i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
 
-    gsl_vector_memcpy(pThreadParams->pA, pThreadParams->pV2);
-    gsl_vector_sub(pThreadParams->pA, pThreadParams->pV0);
-    gsl_vector_scale(pThreadParams->pA, alpha);
-    gsl_vector_add(pThreadParams->pA, pThreadParams->pV0);
+	gsl_vector_memcpy(pThreadParams->pA, pThreadParams->pV2);
+	gsl_vector_sub(pThreadParams->pA, pThreadParams->pV0);
+	gsl_vector_scale(pThreadParams->pA, alpha);
+	gsl_vector_add(pThreadParams->pA, pThreadParams->pV0);
 
-    if (second_half)
-    {
-      gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV2);
-      gsl_vector_sub(pThreadParams->pB, pThreadParams->pV1);
-      gsl_vector_scale(pThreadParams->pB, beta);
-      gsl_vector_add(pThreadParams->pB, pThreadParams->pV1);
-    }
-    else
-    {
-      gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV1);
-      gsl_vector_sub(pThreadParams->pB, pThreadParams->pV0);
-      gsl_vector_scale(pThreadParams->pB, beta);
-      gsl_vector_add(pThreadParams->pB, pThreadParams->pV0);
-    }
+	if (second_half)
+	{
+	  gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV2);
+	  gsl_vector_sub(pThreadParams->pB, pThreadParams->pV1);
+	  gsl_vector_scale(pThreadParams->pB, beta);
+	  gsl_vector_add(pThreadParams->pB, pThreadParams->pV1);
+	}
+	else
+	{
+	  gsl_vector_memcpy(pThreadParams->pB, pThreadParams->pV1);
+	  gsl_vector_sub(pThreadParams->pB, pThreadParams->pV0);
+	  gsl_vector_scale(pThreadParams->pB, beta);
+	  gsl_vector_add(pThreadParams->pB, pThreadParams->pV0);
+	}
 
-    pThreadParams->pA->data[0] = round(pThreadParams->pA->data[0]);
-    pThreadParams->pA->data[1] = round(pThreadParams->pA->data[1]);
-    pThreadParams->pB->data[0] = round(pThreadParams->pB->data[0]);
-    pThreadParams->pB->data[1] = round(pThreadParams->pB->data[1]);
+	pThreadParams->pA->data[0] = round(pThreadParams->pA->data[0]);
+	pThreadParams->pA->data[1] = round(pThreadParams->pA->data[1]);
+	pThreadParams->pB->data[0] = round(pThreadParams->pB->data[0]);
+	pThreadParams->pB->data[1] = round(pThreadParams->pB->data[1]);
 
-    int offset;
-    if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0])
-      gsl_vector_swap(pThreadParams->pA, pThreadParams->pB);
-    // pThreadParams->pA->data[0] += 1;
-    for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++)
-    {
-      if (j < 0 || j >= bmp.bmWidth || ((int)pThreadParams->pV0->data[1] + i) < 0 || ((int)pThreadParams->pV0->data[1] + i) >= bmp.bmHeight)
-        continue;
-      double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j - pThreadParams->pA->data[0]) / (double)(pThreadParams->pB->data[0] - pThreadParams->pA->data[0] + 1);
-      gsl_vector_memcpy(pThreadParams->pP, pThreadParams->pB);
-      gsl_vector_sub(pThreadParams->pP, pThreadParams->pA);
-      gsl_vector_scale(pThreadParams->pP, phi);
-      gsl_vector_add(pThreadParams->pP, pThreadParams->pA);
+	int offset;
+	if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0])
+	  gsl_vector_swap(pThreadParams->pA, pThreadParams->pB);
+	// pThreadParams->pA->data[0] += 1;
+	for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++)
+	{
+	  if (j < 0 || j >= bmp.bmWidth || ((int)pThreadParams->pV0->data[1] + i) < 0 || ((int)pThreadParams->pV0->data[1] + i) >= bmp.bmHeight)
+		continue;
+	  double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j - pThreadParams->pA->data[0]) / (double)(pThreadParams->pB->data[0] - pThreadParams->pA->data[0] + 1);
+	  gsl_vector_memcpy(pThreadParams->pP, pThreadParams->pB);
+	  gsl_vector_sub(pThreadParams->pP, pThreadParams->pA);
+	  gsl_vector_scale(pThreadParams->pP, phi);
+	  gsl_vector_add(pThreadParams->pP, pThreadParams->pA);
 
-      offset = (((int)pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
-      int idx = j + (pThreadParams->pV0->data[1] + i) * bmp.bmWidth;
+	  offset = (((int)pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
+	  int idx = j + (pThreadParams->pV0->data[1] + i) * bmp.bmWidth;
 
-      EnterCriticalSection(zBufferCS + idx);
-      if (zBuffer[idx] > pThreadParams->pP->data[2])
-      {
-        zBuffer[idx] = pThreadParams->pP->data[2];
+	  EnterCriticalSection(zBufferCS + idx);
+	  if (zBuffer[idx] > pThreadParams->pP->data[2])
+	  {
+		zBuffer[idx] = pThreadParams->pP->data[2];
 
-        pBytes[offset + 0] = r;
-        pBytes[offset + 1] = g;
-        pBytes[offset + 2] = b;
-      }
-      LeaveCriticalSection(zBufferCS + idx);
-    }
+		pBytes[offset + 0] = r;
+		pBytes[offset + 1] = g;
+		pBytes[offset + 2] = b;
+	  }
+	  LeaveCriticalSection(zBufferCS + idx);
+	}
   }
 }
 
@@ -674,7 +729,7 @@ void interpolateVector(gsl_vector *firstVector, gsl_vector *secondVector, double
   gsl_vector_add(interpolatedVector, firstVector);
 
   if (isNormalized)
-    gsl_vector_scale(interpolatedVector, 1.0 / gsl_blas_dnrm2(interpolatedVector));
+	gsl_vector_scale(interpolatedVector, 1.0 / gsl_blas_dnrm2(interpolatedVector));
 }
 
 void interpolateTexture(PARAMS *pThreadParams, gsl_vector* firstVector, gsl_vector* secondVector, double rotationPercent, gsl_vector* interpolatedVector)
@@ -687,64 +742,64 @@ void interpolateTexture(PARAMS *pThreadParams, gsl_vector* firstVector, gsl_vect
 	gsl_vector_scale(interpolatedVector, 1.0 / z1);
 	gsl_vector_scale(pThreadParams->pResult, 1.0 / z0);
 
-    gsl_vector_sub(interpolatedVector, pThreadParams->pResult);
-    gsl_vector_scale(interpolatedVector, rotationPercent);
-    gsl_vector_add(interpolatedVector, pThreadParams->pResult);
+	gsl_vector_sub(interpolatedVector, pThreadParams->pResult);
+	gsl_vector_scale(interpolatedVector, rotationPercent);
+	gsl_vector_add(interpolatedVector, pThreadParams->pResult);
 	gsl_vector_scale(interpolatedVector, 1.0 / ((1.0 - rotationPercent) / z0 + rotationPercent / z1));
 }
 
 void calculateSideScanlinePoints(PARAMS *p, double alpha, BOOL second_half, double beta) {
 
-    interpolateVector(p->pV0, p->pV2, alpha, p->pA, FALSE);
-    // interpolateVector(p->pVT0, p->pVT2, alpha, p->pAT, FALSE);
-    interpolateVector(p->pVs0, p->pVs2, alpha, p->pAs, FALSE);
+	interpolateVector(p->pV0, p->pV2, alpha, p->pA, FALSE);
+	// interpolateVector(p->pVT0, p->pVT2, alpha, p->pAT, FALSE);
+	interpolateVector(p->pVs0, p->pVs2, alpha, p->pAs, FALSE);
 	interpolateTexture(p, p->pVT0, p->pVT2, alpha, p->pAT);
-    interpolateVector(p->pVN0, p->pVN2, alpha, p->pAN, TRUE);
+	interpolateVector(p->pVN0, p->pVN2, alpha, p->pAN, TRUE);
 
-    if (second_half)
-    {
-        interpolateVector(p->pV1, p->pV2, beta, p->pB, FALSE);
-        // interpolateVector(p->pVT1, p->pVT2, beta, p->pBT, FALSE);
-        interpolateVector(p->pVs1, p->pVs2, beta, p->pBs, FALSE);
+	if (second_half)
+	{
+		interpolateVector(p->pV1, p->pV2, beta, p->pB, FALSE);
+		// interpolateVector(p->pVT1, p->pVT2, beta, p->pBT, FALSE);
+		interpolateVector(p->pVs1, p->pVs2, beta, p->pBs, FALSE);
 		interpolateTexture(p, p->pVT1, p->pVT2, beta, p->pBT);
-        interpolateVector(p->pVN1, p->pVN2, beta, p->pBN, TRUE);
-    }
-    else
-    {
-        interpolateVector(p->pV0, p->pV1, beta, p->pB, FALSE);
-        // interpolateVector(p->pVT0, p->pVT1, beta, p->pBT, FALSE);
-        interpolateVector(p->pVs0, p->pVs1, beta, p->pBs, FALSE);
+		interpolateVector(p->pVN1, p->pVN2, beta, p->pBN, TRUE);
+	}
+	else
+	{
+		interpolateVector(p->pV0, p->pV1, beta, p->pB, FALSE);
+		// interpolateVector(p->pVT0, p->pVT1, beta, p->pBT, FALSE);
+		interpolateVector(p->pVs0, p->pVs1, beta, p->pBs, FALSE);
 		interpolateTexture(p, p->pVT0, p->pVT1, beta, p->pBT);
-        interpolateVector(p->pVN0, p->pVN1, beta, p->pBN, TRUE);
-    }
+		interpolateVector(p->pVN0, p->pVN1, beta, p->pBN, TRUE);
+	}
 }
 
 void DrawTriangleIl(PARAMS *pThreadParams, int index)
 {
-    gsl_vector_int *pTriangleVertices = pObjFile->fv->data[index];
+	gsl_vector_int *pTriangleVertices = pObjFile->fv->data[index];
 	gsl_vector_int *pnTriangleVertices = pObjFile->fvn->data[index];
 	gsl_vector_int *ptTriangleVertices = pObjFile->fvt->data[index];
 
-    if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
+	if (!(pIsDrawable[pTriangleVertices->data[0]] && pIsDrawable[pTriangleVertices->data[1]] && pIsDrawable[pTriangleVertices->data[2]])) return;
 
-    gsl_vector_memcpy(pThreadParams->pVN0, pObjFile->vn->data[pnTriangleVertices->data[0]]);
-    gsl_vector_memcpy(pThreadParams->pVN1, pObjFile->vn->data[pnTriangleVertices->data[1]]); 
-    gsl_vector_memcpy(pThreadParams->pVN2, pObjFile->vn->data[pnTriangleVertices->data[2]]); 
+	gsl_vector_memcpy(pThreadParams->pVN0, pObjFile->vn->data[pnTriangleVertices->data[0]]);
+	gsl_vector_memcpy(pThreadParams->pVN1, pObjFile->vn->data[pnTriangleVertices->data[1]]); 
+	gsl_vector_memcpy(pThreadParams->pVN2, pObjFile->vn->data[pnTriangleVertices->data[2]]); 
 
-    gsl_vector_memcpy(pThreadParams->pVs0, pObjFile->v->data[pTriangleVertices->data[0]]); 
-    gsl_vector_memcpy(pThreadParams->pVs1, pObjFile->v->data[pTriangleVertices->data[1]]); 
-    gsl_vector_memcpy(pThreadParams->pVs2, pObjFile->v->data[pTriangleVertices->data[2]]); 
-    
+	gsl_vector_memcpy(pThreadParams->pVs0, pObjFile->v->data[pTriangleVertices->data[0]]); 
+	gsl_vector_memcpy(pThreadParams->pVs1, pObjFile->v->data[pTriangleVertices->data[1]]); 
+	gsl_vector_memcpy(pThreadParams->pVs2, pObjFile->v->data[pTriangleVertices->data[2]]); 
+	
 	gsl_vector_memcpy(pThreadParams->pVT0, pObjFile->vt->data[ptTriangleVertices->data[0]]); 
-    gsl_vector_memcpy(pThreadParams->pVT1, pObjFile->vt->data[ptTriangleVertices->data[1]]); 
-    gsl_vector_memcpy(pThreadParams->pVT2, pObjFile->vt->data[ptTriangleVertices->data[2]]); 
+	gsl_vector_memcpy(pThreadParams->pVT1, pObjFile->vt->data[ptTriangleVertices->data[1]]); 
+	gsl_vector_memcpy(pThreadParams->pVT2, pObjFile->vt->data[ptTriangleVertices->data[2]]); 
 
 	gsl_vector_memcpy(pThreadParams->pV0, gvPaintVertices[pTriangleVertices->data[0]]);
 	gsl_vector_memcpy(pThreadParams->pV1, gvPaintVertices[pTriangleVertices->data[1]]);
 	gsl_vector_memcpy(pThreadParams->pV2, gvPaintVertices[pTriangleVertices->data[2]]);
 
 
-	// HELP!!! HELP!!! HELP!!!
+	  // HELP!!! HELP!!! HELP!!!
 	gsl_vector_memcpy(pThreadParams->pE1, pThreadParams->pVs1);
 	gsl_vector_sub(pThreadParams->pE1, pThreadParams->pVs0);
 	gsl_vector_memcpy(pThreadParams->pE2, pThreadParams->pVs2);
@@ -763,93 +818,94 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 	pThreadParams->pTangent->data[2] = f * (pThreadParams->pUV2->data[1] * pThreadParams->pE1->data[2] - pThreadParams->pUV1->data[1] * pThreadParams->pE2->data[2]);
 	gsl_vector_scale(pThreadParams->pTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pTangent));
 
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) {
+	if (pThreadParams->pV0->data[1] > pThreadParams->pV1->data[1]) {
+		gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV1); 
+		gsl_vector_swap(pThreadParams->pVN0, pThreadParams->pVN1);
+		gsl_vector_swap(pThreadParams->pVs0, pThreadParams->pVs1);
+		gsl_vector_swap(pThreadParams->pVT0, pThreadParams->pVT1);
+	}
+	if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) {
+	  gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV2);
+	  gsl_vector_swap(pThreadParams->pVN0, pThreadParams->pVN2);
+	  gsl_vector_swap(pThreadParams->pVs0, pThreadParams->pVs2);
+	  gsl_vector_swap(pThreadParams->pVT0, pThreadParams->pVT2);
+	}
+	if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) {
+	  gsl_vector_swap(pThreadParams->pV1, pThreadParams->pV2);
+	  gsl_vector_swap(pThreadParams->pVN1, pThreadParams->pVN2);
+	  gsl_vector_swap(pThreadParams->pVs1, pThreadParams->pVs2);
+	  gsl_vector_swap(pThreadParams->pVT1, pThreadParams->pVT2);
+	}
 
-      gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV1); 
-      gsl_vector_swap(pThreadParams->pVN0, pThreadParams->pVN1);
-      gsl_vector_swap(pThreadParams->pVs0, pThreadParams->pVs1);
-      gsl_vector_swap(pThreadParams->pVT0, pThreadParams->pVT1);
-    }
-    if (pThreadParams->pV0->data[1] > pThreadParams->pV2->data[1]) {
-      gsl_vector_swap(pThreadParams->pV0, pThreadParams->pV2);
-      gsl_vector_swap(pThreadParams->pVN0, pThreadParams->pVN2);
-      gsl_vector_swap(pThreadParams->pVs0, pThreadParams->pVs2);
-      gsl_vector_swap(pThreadParams->pVT0, pThreadParams->pVT2);
-    }
-    if (pThreadParams->pV1->data[1] > pThreadParams->pV2->data[1]) {
-      gsl_vector_swap(pThreadParams->pV1, pThreadParams->pV2);
-      gsl_vector_swap(pThreadParams->pVN1, pThreadParams->pVN2);
-      gsl_vector_swap(pThreadParams->pVs1, pThreadParams->pVs2);
-      gsl_vector_swap(pThreadParams->pVT1, pThreadParams->pVT2);
-    }
+	for (int i = 0; i < 2; i++)
+	{
+		pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
+		pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
+		pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
+	}
 
-    for (int i = 0; i < 2; i++)
-    {
-        pThreadParams->pV0->data[i] = round(pThreadParams->pV0->data[i]);
-        pThreadParams->pV1->data[i] = round(pThreadParams->pV1->data[i]);
-        pThreadParams->pV2->data[i] = round(pThreadParams->pV2->data[i]);
-    }
-
-    if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return; //<!-- realy need this? it is validation of .obj file actually
+	if (abs(pThreadParams->pV0->data[1] - pThreadParams->pV1->data[1]) < 1 && abs(pThreadParams->pV0->data[1] - pThreadParams->pV2->data[1]) < 1) return; //<!-- realy need this? it is validation of .obj file actually
 
 	int total_height = pThreadParams->pV2->data[1] - pThreadParams->pV0->data[1];
 
 	vector_cross_product3(pThreadParams->pNormal, pThreadParams->pTangent, pThreadParams->pBTangent);
 	gsl_vector_scale(pThreadParams->pBTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pBTangent)); 
 	
-    for (int i=0; i<total_height; i++) {
-        BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
-        int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
-        double alpha = (double) i / total_height;
-        double beta  = (double) (i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
-        
-        calculateSideScanlinePoints(pThreadParams, alpha, second_half, beta);
+	for (int i=0; i<total_height; i++) {
+		BOOL second_half = i > pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] || abs(pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]) < 1;
+		int segment_height = (second_half ? (pThreadParams->pV2->data[1] - pThreadParams->pV1->data[1]) : (pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1]));
+		double alpha = (double) i / total_height;
+		double beta  = (double) (i - (second_half ? pThreadParams->pV1->data[1] - pThreadParams->pV0->data[1] : 0)) / segment_height;
+		
+		calculateSideScanlinePoints(pThreadParams, alpha, second_half, beta);
 
 
-    for (int i = 0; i < 2; i++)
-    {
-      pThreadParams->pA->data[i] = round(pThreadParams->pA->data[i]);
-      pThreadParams->pB->data[i] = round(pThreadParams->pB->data[i]);
-    }
+	for (int i = 0; i < 2; i++)
+	{
+	  pThreadParams->pA->data[i] = round(pThreadParams->pA->data[i]);
+	  pThreadParams->pB->data[i] = round(pThreadParams->pB->data[i]);
+	}
 
-        if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) {
-           gsl_vector_swap(pThreadParams->pA, pThreadParams->pB);
-           gsl_vector_swap(pThreadParams->pAs, pThreadParams->pBs);
-           gsl_vector_swap(pThreadParams->pAT, pThreadParams->pBT);
-           gsl_vector_swap(pThreadParams->pAN, pThreadParams->pBN);
-        }
+		if (pThreadParams->pA->data[0] > pThreadParams->pB->data[0]) {
+		   gsl_vector_swap(pThreadParams->pA, pThreadParams->pB);
+		   gsl_vector_swap(pThreadParams->pAs, pThreadParams->pBs);
+		   gsl_vector_swap(pThreadParams->pAT, pThreadParams->pBT);
+		   gsl_vector_swap(pThreadParams->pAN, pThreadParams->pBN);
+		}
 
-    int offset;
+	int offset;
 
-    for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++)
-    {
+	for (int j = pThreadParams->pA->data[0] + 1; j <= pThreadParams->pB->data[0]; j++)
+	{
 
-      if (j < 0 || j >= bmp.bmWidth || ((int)pThreadParams->pV0->data[1] + i) < 0 || ((int)pThreadParams->pV0->data[1] + i) >= bmp.bmHeight)
-        continue;
+		if (j < 0 || j >= bmp.bmWidth || ((int)pThreadParams->pV0->data[1] + i) < 0 || ((int)pThreadParams->pV0->data[1] + i) >= bmp.bmHeight)
+		continue;
 
-      double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j - pThreadParams->pA->data[0]) / (double)(pThreadParams->pB->data[0] - pThreadParams->pA->data[0] + 1);
+		double phi = abs(pThreadParams->pB->data[0] - pThreadParams->pA->data[0]) < 1 ? 1.0 : (double)(j - pThreadParams->pA->data[0]) / (double)(pThreadParams->pB->data[0] - pThreadParams->pA->data[0] + 1);
 
-            interpolateVector(pThreadParams->pA, pThreadParams->pB, phi, pThreadParams->pP, FALSE);
-            interpolateVector(pThreadParams->pAs, pThreadParams->pBs, phi, pThreadParams->pPs, FALSE);
-            // interpolateVector(pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT, FALSE);
-			interpolateTexture(pThreadParams, pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT);
-            interpolateVector(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN, TRUE);
+		interpolateVector(pThreadParams->pA, pThreadParams->pB, phi, pThreadParams->pP, FALSE);
+		interpolateVector(pThreadParams->pAs, pThreadParams->pBs, phi, pThreadParams->pPs, FALSE);
+		// interpolateVector(pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT, FALSE);
+		interpolateTexture(pThreadParams, pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT);
+		interpolateVector(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN, TRUE);
 
-			offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
-			int idx = j+(pThreadParams->pV0->data[1] + i)*bmp.bmWidth;
+		offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
+		int idx = j+(pThreadParams->pV0->data[1] + i)*bmp.bmWidth;
 
-			EnterCriticalSection(zBufferCS + idx);
-			if (zBuffer[idx] > pThreadParams->pP->data[2]) {
-				zBuffer[idx] = pThreadParams->pP->data[2];
-				
-				int globalTextureIDX = (4096 * (int)(4096 - 4096 * pThreadParams->pPT->data[1]) + (int)(pThreadParams->pPT->data[0] * 4096));
-				int normalIDX = globalTextureIDX * 3;
-				int colorIDX = globalTextureIDX * 3;
-                double lambertian = 0.0;
-                double shininessVal = 20;
-                double specular = 0.0;
-				double temp = 0;
-				
+		EnterCriticalSection(zBufferCS + idx);
+		if (zBuffer[idx] > pThreadParams->pP->data[2]) {
+			zBuffer[idx] = pThreadParams->pP->data[2];
+			
+			int globalTextureIDX = (4096 * (int)(4096 - 4096 * pThreadParams->pPT->data[1]) + (int)(pThreadParams->pPT->data[0] * 4096));
+			int normalIDX = globalTextureIDX * 3;
+			int colorIDX = globalTextureIDX * 3;
+			double lambertian = 0.0;
+			double shininessVal = 20;
+			double specular = 0.0;
+			double temp = 0;
+			
+			if (index < floorFaceIndex)
+			{
 				gsl_vector_memcpy(pThreadParams->pNormal, pThreadParams->pPN);
 				gsl_vector_memcpy(pThreadParams->pResult, pThreadParams->pTangent);
 				gsl_blas_ddot(pThreadParams->pResult, pThreadParams->pNormal, &temp);
@@ -868,7 +924,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
 
 				gsl_vector* L = pThreadParams->L;
-                gsl_vector_memcpy(L, eye);
+				gsl_vector_memcpy(L, eye);
 
 				gsl_blas_dgemv(CblasTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPN, 0, pThreadParams->pResult);
 				gsl_vector_memcpy(pThreadParams->pPN, pThreadParams->pResult);
@@ -879,40 +935,47 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				// gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPs, 0, pThreadParams->pResult);
 				// gsl_vector_memcpy(pThreadParams->pPs, pThreadParams->pResult);
 
-                gsl_vector_sub(L, pThreadParams->pPs);
-                gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+				gsl_vector_sub(L, pThreadParams->pPs);
+				gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
-        gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
-        lambertian = max(lambertian, 0.0f);
+				gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
+				lambertian = max(lambertian, 0.0f);
 
-                if(lambertian > 0.0) {
-                  gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
-                  gsl_vector_sub(pThreadParams->pPN, L);
-                  
-                  gsl_blas_ddot(pThreadParams->pPN, L, &specular);
-                  specular = pow(max(specular, 0.0f), shininessVal);
-                }
-				
-                // pBytes[offset + 0] = albedoBuffer[normalIDX + 2];
-                // pBytes[offset + 1] = albedoBuffer[normalIDX + 1]; 
-                // pBytes[offset + 2] = albedoBuffer[normalIDX + 0];  
-                // pBytes[offset + 0] = specularBuffer[normalIDX + 2];
-                // pBytes[offset + 1] = specularBuffer[normalIDX + 1]; 
-                // pBytes[offset + 2] = specularBuffer[normalIDX + 0];  
-                // pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 2]/255.0 + albedoBuffer[colorIDX + 2] * lambertian + 0.2 * specularBuffer[colorIDX + 2], 255);
-                // pBytes[offset + 1] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 1]/255.0 + albedoBuffer[colorIDX + 1] * lambertian + 0.2 * specularBuffer[colorIDX + 1], 255); 
-                // pBytes[offset + 2] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 0]/255.0 + albedoBuffer[colorIDX + 0] * lambertian + 0.2 * specularBuffer[colorIDX + 0], 255);  
-                pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] * lambertian + 255*specular, 255);
-                pBytes[offset + 1] = min(albedoBuffer[colorIDX + 1] * lambertian + 255*specular, 255); 
-                pBytes[offset + 2] = min(albedoBuffer[colorIDX + 0] * lambertian + 255*specular, 255);  
-                // pBytes[offset + 0] = min(, 255); 
-                // pBytes[offset + 1] = min(, 255);
-                // pBytes[offset + 2] = min(, 255);   
-            }
-            LeaveCriticalSection(zBufferCS+idx);
-        }
+				if(lambertian > 0.0) {
+					gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
+					gsl_vector_sub(pThreadParams->pPN, L);
+					
+					gsl_blas_ddot(pThreadParams->pPN, L, &specular);
+					specular = pow(max(specular, 0.0f), shininessVal);
+				}
+			
+				// pBytes[offset + 0] = albedoBuffer[normalIDX + 2];
+				// pBytes[offset + 1] = albedoBuffer[normalIDX + 1]; 
+				// pBytes[offset + 2] = albedoBuffer[normalIDX + 0];  
+				// pBytes[offset + 0] = specularBuffer[normalIDX + 2];
+				// pBytes[offset + 1] = specularBuffer[normalIDX + 1]; 
+				// pBytes[offset + 2] = specularBuffer[normalIDX + 0];  
+				// pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 2]/255.0 + albedoBuffer[colorIDX + 2] * lambertian + 0.2 * specularBuffer[colorIDX + 2], 255);
+				// pBytes[offset + 1] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 1]/255.0 + albedoBuffer[colorIDX + 1] * lambertian + 0.2 * specularBuffer[colorIDX + 1], 255); 
+				// pBytes[offset + 2] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 0]/255.0 + albedoBuffer[colorIDX + 0] * lambertian + 0.2 * specularBuffer[colorIDX + 0], 255);  
+				pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] * lambertian + 255*specular, 255);
+				pBytes[offset + 1] = min(albedoBuffer[colorIDX + 1] * lambertian + 255*specular, 255); 
+				pBytes[offset + 2] = min(albedoBuffer[colorIDX + 0] * lambertian + 255*specular, 255);  
+				// pBytes[offset + 0] = min(, 255); 
+				// pBytes[offset + 1] = min(, 255);
+				// pBytes[offset + 2] = min(, 255);   
+			} 
+			else
+			{
+				pBytes[offset + 0] = floorBuffer[colorIDX + 2];
+				pBytes[offset + 1] = floorBuffer[colorIDX + 1]; 
+				pBytes[offset + 2] = floorBuffer[colorIDX + 0];  
+			}
+		}
+		LeaveCriticalSection(zBufferCS+idx);
+	}
 
-    }
+	}
 }
 
 void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
@@ -920,8 +983,8 @@ void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
   PARAMS *param = (PARAMS *)params;
   for (int i = param->from; i < param->to; i++)
   {
-    // if (!PrepareTriangleFillData(param, i))
-      DrawTriangleIl(param, i);
+	// if (!PrepareTriangleFillData(param, i))
+	  DrawTriangleIl(param, i);
   }
 
   InterlockedAdd(&count, 1);
@@ -933,22 +996,22 @@ void SetFullScreen(HWND hwnd)
 
   if (dwStyle & WS_OVERLAPPEDWINDOW)
   {
-    MONITORINFO mi = {sizeof(mi)};
+	MONITORINFO mi = {sizeof(mi)};
 
-    if (GetWindowPlacement(hwnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi))
-    {
-      SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
-      SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
-                   SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-    }
+	if (GetWindowPlacement(hwnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi))
+	{
+	  SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+	  SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top,
+				   SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+	}
   }
   else
   {
-    SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
-    SetWindowPlacement(hwnd, &g_wpPrev);
-    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+	SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+	SetWindowPlacement(hwnd, &g_wpPrev);
+	SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+				 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+					 SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
   }
 }
 
@@ -979,12 +1042,12 @@ void DrawProc(HDC hdc)
   SubmitThreadpoolWork(work);
   for (int i = 1; i < N_PARAMS - 1; i++)
   {
-    params[i].from = params[i - 1].to;
-    params[i].to = params[i].from + delta;
-    params[i].dc = hdc;
-    work = CreateThreadpoolWork(task, params + i, &tpCBEnvironment);
-    SubmitThreadpoolWork(work);
-    // SubmitTask(hPool, task, params + i);
+	params[i].from = params[i - 1].to;
+	params[i].to = params[i].from + delta;
+	params[i].dc = hdc;
+	work = CreateThreadpoolWork(task, params + i, &tpCBEnvironment);
+	SubmitThreadpoolWork(work);
+	// SubmitTask(hPool, task, params + i);
   }
   params[N_PARAMS - 1].from = params[N_PARAMS - 2].to;
   params[N_PARAMS - 1].to = pObjFile->fv->nCurSize;
@@ -999,8 +1062,8 @@ void DrawProc(HDC hdc)
   }
   count = 0;
   CloseThreadpoolCleanupGroupMembers(tpCUGroup,
-                                     FALSE,
-                                     &tpCBEnvironment);
+									 FALSE,
+									 &tpCBEnvironment);
 
   SetDIBits(hdc, hbmBack, 0, bmp.bmHeight, pBytes, &bmi, DIB_RGB_COLORS);
 
@@ -1020,28 +1083,28 @@ void MoveProc()
 
   if (keys[0x57])
   {
-    gsl_vector_memcpy(pResult, target);
-    gsl_vector_sub(pResult, eye);
-    gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
-    gsl_vector_add(eye, pResult);
+	gsl_vector_memcpy(pResult, target);
+	gsl_vector_sub(pResult, eye);
+	gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
+	gsl_vector_add(eye, pResult);
   }
 
   if (keys[0x53])
   {
-    gsl_vector_memcpy(pResult, target);
-    gsl_vector_sub(pResult, eye);
-    gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
-    gsl_vector_sub(eye, pResult);
+	gsl_vector_memcpy(pResult, target);
+	gsl_vector_sub(pResult, eye);
+	gsl_vector_scale(pResult, 1 / gsl_blas_dnrm2(pResult) * cameraSpeed);
+	gsl_vector_sub(eye, pResult);
   }
 
   if (keys[0x41])
   {
-    gsl_vector_memcpy(pResult, target);
-    gsl_vector_sub(pResult, eye);
-    vector_cross_product3(pResult, up, xAxis);
-    gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (-cameraSpeed));
-    gsl_vector_add(eye, xAxis);
-    gsl_vector_add(target, xAxis);
+	gsl_vector_memcpy(pResult, target);
+	gsl_vector_sub(pResult, eye);
+	vector_cross_product3(pResult, up, xAxis);
+	gsl_vector_scale(xAxis, 1.0 / gsl_blas_dnrm2(xAxis) * (-cameraSpeed));
+	gsl_vector_add(eye, xAxis);
+	gsl_vector_add(target, xAxis);
   }
 
 	if (keys[0x44])
@@ -1077,117 +1140,117 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
   {
   /* Section for window messages */
   case WM_CREATE:
-    InitializeResources();
-    SetTimer(hWnd, TIMER_REPAINT_ID, TIMER_REPAINT_MS, NULL);
-    break;
+	InitializeResources();
+	SetTimer(hWnd, TIMER_REPAINT_ID, TIMER_REPAINT_MS, NULL);
+	break;
   case WM_TIMER:
-    MoveProc();
-    ApplyTransformations();
-    // InvalidateRect(hWnd, NULL, FALSE);
-    break;
+	MoveProc();
+	ApplyTransformations();
+	// InvalidateRect(hWnd, NULL, FALSE);
+	break;
   case WM_PAINT:
-    HDC dc;
-    PAINTSTRUCT ps;
+	HDC dc;
+	PAINTSTRUCT ps;
 
-    dc = BeginPaint(hWnd, &ps);
+	dc = BeginPaint(hWnd, &ps);
 
-    DrawProc(hdcBack);
+	DrawProc(hdcBack);
 
-    BitBlt(dc, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, hdcBack, 0, 0, SRCCOPY);
+	BitBlt(dc, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, hdcBack, 0, 0, SRCCOPY);
 
-    EndPaint(hWnd, &ps);
+	EndPaint(hWnd, &ps);
 
-    fps.frames++;
-    break;
+	fps.frames++;
+	break;
   case WM_SIZE:
-    FinalizeBuffer(&hdcBack, &hbmBack);
-    InitializeBuffer(hWnd, &hdcBack, &hbmBack, &rcClient);
+	FinalizeBuffer(&hdcBack, &hbmBack);
+	InitializeBuffer(hWnd, &hdcBack, &hbmBack, &rcClient);
 
-    // for fps label
-    rcModelInfo.left = rcClient.left;
-    rcModelInfo.top = rcClient.bottom - 30;
-    rcModelInfo.bottom = rcClient.bottom;
-    rcModelInfo.right = rcClient.left + 80;
+	// for fps label
+	rcModelInfo.left = rcClient.left;
+	rcModelInfo.top = rcClient.bottom - 30;
+	rcModelInfo.bottom = rcClient.bottom;
+	rcModelInfo.right = rcClient.left + 80;
 
-    // reinitializing BITMAPINFO structure
-    GetObject(hbmBack, sizeof(BITMAP), &bmp);
+	// reinitializing BITMAPINFO structure
+	GetObject(hbmBack, sizeof(BITMAP), &bmp);
 
-    memset(&bmi, 0, sizeof(bmi));
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    GetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, NULL, &bmi, DIB_RGB_COLORS);
-    bmi.bmiHeader.biCompression = BI_RGB;
-    bmi.bmiHeader.biHeight = -bmp.bmHeight;
+	memset(&bmi, 0, sizeof(bmi));
+	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	GetDIBits(hdcBack, hbmBack, 0, bmp.bmHeight, NULL, &bmi, DIB_RGB_COLORS);
+	bmi.bmiHeader.biCompression = BI_RGB;
+	bmi.bmiHeader.biHeight = -bmp.bmHeight;
 
-    double scaleX = bmp.bmWidth / 2.0;
-    double scaleY = bmp.bmHeight / 2.0;
+	double scaleX = bmp.bmWidth / 2.0;
+	double scaleY = bmp.bmHeight / 2.0;
 
-    translViewPort[0] = scaleY;
-    translViewPort[3] = scaleX;
-    translViewPort[5] = -scaleY;
-    translViewPort[7] = scaleY;
+	translViewPort[0] = scaleY;
+	translViewPort[3] = scaleX;
+	translViewPort[5] = -scaleY;
+	translViewPort[7] = scaleY;
 
-    pBytes = realloc(pBytes, bmi.bmiHeader.biSizeImage);
-    zBuffer = realloc(zBuffer, bmp.bmHeight * bmp.bmWidth * sizeof(double));
-    zBufferCS = realloc(zBufferCS, bmp.bmHeight * bmp.bmWidth * sizeof(CRITICAL_SECTION));
-    for (int i = 0; i < bmp.bmHeight * bmp.bmWidth; i++)
-    {
-      InitializeCriticalSectionAndSpinCount(zBufferCS + i, 2000);
-    }
-    break;
+	pBytes = realloc(pBytes, bmi.bmiHeader.biSizeImage);
+	zBuffer = realloc(zBuffer, bmp.bmHeight * bmp.bmWidth * sizeof(double));
+	zBufferCS = realloc(zBufferCS, bmp.bmHeight * bmp.bmWidth * sizeof(CRITICAL_SECTION));
+	for (int i = 0; i < bmp.bmHeight * bmp.bmWidth; i++)
+	{
+	  InitializeCriticalSectionAndSpinCount(zBufferCS + i, 2000);
+	}
+	break;
   case WM_LBUTTONDOWN:
-    ptMousePrev.x = GET_X_LPARAM(lParam);
-    ptMousePrev.y = GET_Y_LPARAM(lParam);
-    isActivated = TRUE;
-    break;
+	ptMousePrev.x = GET_X_LPARAM(lParam);
+	ptMousePrev.y = GET_Y_LPARAM(lParam);
+	isActivated = TRUE;
+	break;
   case WM_LBUTTONUP:
-    isActivated = FALSE;
-    break;
+	isActivated = FALSE;
+	break;
   case WM_MOUSEMOVE:
-    if (isActivated)
-    {
-      int xMousePos = GET_X_LPARAM(lParam);
-      int yMousePos = GET_Y_LPARAM(lParam);
+	if (isActivated)
+	{
+	  int xMousePos = GET_X_LPARAM(lParam);
+	  int yMousePos = GET_Y_LPARAM(lParam);
 
-      angleThetha -= (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
-      anglePhi += (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI;
+	  angleThetha -= (yMousePos - ptMousePrev.y) / 720.0 * 2 * M_PI;
+	  anglePhi += (xMousePos - ptMousePrev.x) / 1280.0 * 2 * M_PI;
 
-      gsl_vector_set_zero(target);
-      eye->data[0] = destR * sin(angleThetha) * cos(anglePhi);
-      eye->data[1] = destR * cos(angleThetha);
-      eye->data[2] = destR * sin(angleThetha) * sin(anglePhi);
+	  gsl_vector_set_zero(target);
+	  eye->data[0] = destR * sin(angleThetha) * cos(anglePhi);
+	  eye->data[1] = destR * cos(angleThetha);
+	  eye->data[2] = destR * sin(angleThetha) * sin(anglePhi);
 
-      ptMousePrev.x = xMousePos;
-      ptMousePrev.y = yMousePos;
-    }
-    break;
+	  ptMousePrev.x = xMousePos;
+	  ptMousePrev.y = yMousePos;
+	}
+	break;
   case WM_MOUSEWHEEL:
-    byte isScalePositive = GET_WHEEL_DELTA_WPARAM(wParam) < 0;
+	byte isScalePositive = GET_WHEEL_DELTA_WPARAM(wParam) < 0;
 
-    CAMERA_VIEW_HEIGHT += isScalePositive ? WHEEL_DELTA_SCALE : -WHEEL_DELTA_SCALE;
-    CAMERA_VIEW_WIDTH += isScalePositive ? WHEEL_DELTA_SCALE : -WHEEL_DELTA_SCALE;
+	CAMERA_VIEW_HEIGHT += isScalePositive ? WHEEL_DELTA_SCALE : -WHEEL_DELTA_SCALE;
+	CAMERA_VIEW_WIDTH += isScalePositive ? WHEEL_DELTA_SCALE : -WHEEL_DELTA_SCALE;
 
-    translProjection[0] = 2.0 * Z_NEAR / CAMERA_VIEW_WIDTH;
-    translProjection[5] = 2.0 * Z_NEAR / CAMERA_VIEW_HEIGHT;
+	translProjection[0] = 2.0 * Z_NEAR / CAMERA_VIEW_WIDTH;
+	translProjection[5] = 2.0 * Z_NEAR / CAMERA_VIEW_HEIGHT;
 
-    break;
+	break;
   case WM_KEYDOWN:
-    keys[wParam] = 1;
-    break;
+	keys[wParam] = 1;
+	break;
   case WM_KEYUP:
-    keys[wParam] = 0;
-    break;
+	keys[wParam] = 0;
+	break;
   case WM_SYSKEYDOWN:
-    if (wParam == VK_F12 && (lParam & (1 << 29)))
-    {
-      SetFullScreen(hWnd);
-    }
-    break;
+	if (wParam == VK_F12 && (lParam & (1 << 29)))
+	{
+	  SetFullScreen(hWnd);
+	}
+	break;
   case WM_DESTROY:
-    ExitProcess(0); // need some fix
-    FreeAllResources();
-    FinalizeBuffer(&hdcBack, &hbmBack);
-    PostQuitMessage(0);
-    break;
+	ExitProcess(0); // need some fix
+	FreeAllResources();
+	FinalizeBuffer(&hdcBack, &hbmBack);
+	PostQuitMessage(0);
+	break;
   }
 
   return DefWindowProc(hWnd, message, wParam, lParam);
@@ -1225,12 +1288,12 @@ int WINAPI ModelStart(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 
   for (;;)
   {
-    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-    {
-      DispatchMessage(&msg);
-    }
-    fpsLOG();
-    InvalidateRect(hwndMainWindow, NULL, FALSE);
+	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+	{
+	  DispatchMessage(&msg);
+	}
+	fpsLOG();
+	InvalidateRect(hwndMainWindow, NULL, FALSE);
   }
 
   return (int)msg.wParam;

@@ -23,5 +23,6 @@ typedef struct
 
 ObjFile *parseOBJ(FILE *stream);
 void DestroyObjFileInfo(ObjFile *pObjFile);
+void TrimObjFileArrays(ObjFile *pObjFile);
 
 #endif
