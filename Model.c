@@ -105,7 +105,7 @@ gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
 DOUBLE yOffset = 		0;
-DOUBLE destR =          2;
+DOUBLE destR =          3;
 DOUBLE angleThetha =    M_PI_2;
 DOUBLE anglePhi =       M_PI_2;
 
@@ -355,7 +355,6 @@ void ApplyTransformations()
   for (int i = 1; i < pObjFile->v->nCurSize; i++)
   {
 	gsl_vector *pVector = gvPaintVertices[i];
-	double w;
 	gsl_blas_dgemv(CblasNoTrans, 1.0, matrixTransformation, pVector, 0, pResult);
 
 	if (pIsDrawable[i] = isInside(pResult))
@@ -363,8 +362,7 @@ void ApplyTransformations()
 		gsl_vector_memcpy(pVector, pResult);
 		gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
 		gsl_vector_memcpy(pVector, pResult);
-		gsl_vector_scale(pVector, 1.0 / (w = gsl_vector_get(pVector, 3)));
-		pVector->data[3] = w;
+		gsl_vector_scale(pVector, 1.0 / gsl_vector_get(pVector, 3));
 	}
   }
 }
@@ -732,10 +730,28 @@ void interpolateVector(gsl_vector *firstVector, gsl_vector *secondVector, double
 	gsl_vector_scale(interpolatedVector, 1.0 / gsl_blas_dnrm2(interpolatedVector));
 }
 
-void interpolateTexture(PARAMS *pThreadParams, gsl_vector* firstVector, gsl_vector* secondVector, double rotationPercent, gsl_vector* interpolatedVector)
+void interpolateTexture(PARAMS *pThreadParams, gsl_vector* firstVector, gsl_vector* secondVector, double rotationPercent, gsl_vector* interpolatedVector, int number)
 {
-	double z0 = pThreadParams->pA->data[2];
-	double z1 = pThreadParams->pB->data[2];
+	double z0, z1;
+	switch (number)
+	{
+		case 1:
+			z0 = pThreadParams->pV0->data[2];
+			z1 = pThreadParams->pV1->data[2];
+			break;
+		case 2: 
+			z0 = pThreadParams->pV0->data[2];
+			z1 = pThreadParams->pV2->data[2];
+			break;
+		case 12:
+			z0 = pThreadParams->pV1->data[2];
+			z1 = pThreadParams->pV2->data[2];
+			break;
+		case 22:
+			z0 = pThreadParams->pA->data[2];
+			z1 = pThreadParams->pB->data[2];
+			break;
+	}
 
 	gsl_vector_memcpy(interpolatedVector, secondVector);
 	gsl_vector_memcpy(pThreadParams->pResult, firstVector);
@@ -753,7 +769,7 @@ void calculateSideScanlinePoints(PARAMS *p, double alpha, BOOL second_half, doub
 	interpolateVector(p->pV0, p->pV2, alpha, p->pA, FALSE);
 	// interpolateVector(p->pVT0, p->pVT2, alpha, p->pAT, FALSE);
 	interpolateVector(p->pVs0, p->pVs2, alpha, p->pAs, FALSE);
-	interpolateTexture(p, p->pVT0, p->pVT2, alpha, p->pAT);
+	interpolateTexture(p, p->pVT0, p->pVT2, alpha, p->pAT, 2);
 	interpolateVector(p->pVN0, p->pVN2, alpha, p->pAN, TRUE);
 
 	if (second_half)
@@ -761,7 +777,7 @@ void calculateSideScanlinePoints(PARAMS *p, double alpha, BOOL second_half, doub
 		interpolateVector(p->pV1, p->pV2, beta, p->pB, FALSE);
 		// interpolateVector(p->pVT1, p->pVT2, beta, p->pBT, FALSE);
 		interpolateVector(p->pVs1, p->pVs2, beta, p->pBs, FALSE);
-		interpolateTexture(p, p->pVT1, p->pVT2, beta, p->pBT);
+		interpolateTexture(p, p->pVT1, p->pVT2, beta, p->pBT, 12);
 		interpolateVector(p->pVN1, p->pVN2, beta, p->pBN, TRUE);
 	}
 	else
@@ -769,7 +785,7 @@ void calculateSideScanlinePoints(PARAMS *p, double alpha, BOOL second_half, doub
 		interpolateVector(p->pV0, p->pV1, beta, p->pB, FALSE);
 		// interpolateVector(p->pVT0, p->pVT1, beta, p->pBT, FALSE);
 		interpolateVector(p->pVs0, p->pVs1, beta, p->pBs, FALSE);
-		interpolateTexture(p, p->pVT0, p->pVT1, beta, p->pBT);
+		interpolateTexture(p, p->pVT0, p->pVT1, beta, p->pBT, 1);
 		interpolateVector(p->pVN0, p->pVN1, beta, p->pBN, TRUE);
 	}
 }
@@ -886,7 +902,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 		interpolateVector(pThreadParams->pA, pThreadParams->pB, phi, pThreadParams->pP, FALSE);
 		interpolateVector(pThreadParams->pAs, pThreadParams->pBs, phi, pThreadParams->pPs, FALSE);
 		// interpolateVector(pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT, FALSE);
-		interpolateTexture(pThreadParams, pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT);
+		interpolateTexture(pThreadParams, pThreadParams->pAT, pThreadParams->pBT, phi, pThreadParams->pPT, 22);
 		interpolateVector(pThreadParams->pAN, pThreadParams->pBN, phi, pThreadParams->pPN, TRUE);
 
 		offset = (((int) pThreadParams->pV0->data[1] + i) * bmp.bmWidth + j) << 2;
@@ -895,7 +911,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 		EnterCriticalSection(zBufferCS + idx);
 		if (zBuffer[idx] > pThreadParams->pP->data[2]) {
 			zBuffer[idx] = pThreadParams->pP->data[2];
-			
+			if (zBuffer[idx] < 0 || zBuffer[idx] > 1) printf("%g", zBuffer[idx]);
 			int globalTextureIDX = (4096 * (int)(4096 - 4096 * pThreadParams->pPT->data[1]) + (int)(pThreadParams->pPT->data[0] * 4096));
 			int normalIDX = globalTextureIDX * 3;
 			int colorIDX = globalTextureIDX * 3;
