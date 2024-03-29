@@ -105,7 +105,7 @@ gsl_vector *xAxis;
 gsl_vector *yAxis;
 gsl_vector *zAxis;
 DOUBLE yOffset = 		0;
-DOUBLE destR =          3;
+DOUBLE destR =          10;
 DOUBLE angleThetha =    M_PI_2;
 DOUBLE anglePhi =       M_PI_2;
 
@@ -355,6 +355,7 @@ void ApplyTransformations()
   for (int i = 1; i < pObjFile->v->nCurSize; i++)
   {
 	gsl_vector *pVector = gvPaintVertices[i];
+	double w;
 	gsl_blas_dgemv(CblasNoTrans, 1.0, matrixTransformation, pVector, 0, pResult);
 
 	if (pIsDrawable[i] = isInside(pResult))
@@ -362,7 +363,8 @@ void ApplyTransformations()
 		gsl_vector_memcpy(pVector, pResult);
 		gsl_blas_dgemv(CblasNoTrans, 1.0, &matrixViewPort, pVector, 0, pResult);
 		gsl_vector_memcpy(pVector, pResult);
-		gsl_vector_scale(pVector, 1.0 / gsl_vector_get(pVector, 3));
+		gsl_vector_scale(pVector, 1.0 / (w = gsl_vector_get(pVector, 3)));
+		pVector->data[3] = w;
 	}
   }
 }
@@ -453,6 +455,9 @@ void InitializeResources()
   }
 
   pIsDrawable = calloc(pObjFile->v->nCurSize + 1, sizeof(byte));
+
+	translProjection[0] = 2.0 * Z_NEAR / CAMERA_VIEW_WIDTH;
+	translProjection[5] = 2.0 * Z_NEAR / CAMERA_VIEW_HEIGHT;
 
   ApplyTransformations();
 
@@ -736,20 +741,20 @@ void interpolateTexture(PARAMS *pThreadParams, gsl_vector* firstVector, gsl_vect
 	switch (number)
 	{
 		case 1:
-			z0 = pThreadParams->pV0->data[2];
-			z1 = pThreadParams->pV1->data[2];
+			z0 = pThreadParams->pV0->data[3];
+			z1 = pThreadParams->pV1->data[3];
 			break;
 		case 2: 
-			z0 = pThreadParams->pV0->data[2];
-			z1 = pThreadParams->pV2->data[2];
+			z0 = pThreadParams->pV0->data[3];
+			z1 = pThreadParams->pV2->data[3];
 			break;
 		case 12:
-			z0 = pThreadParams->pV1->data[2];
-			z1 = pThreadParams->pV2->data[2];
+			z0 = pThreadParams->pV1->data[3];
+			z1 = pThreadParams->pV2->data[3];
 			break;
 		case 22:
-			z0 = pThreadParams->pA->data[2];
-			z1 = pThreadParams->pB->data[2];
+			z0 = pThreadParams->pA->data[3];
+			z1 = pThreadParams->pB->data[3];
 			break;
 	}
 
@@ -911,7 +916,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 		EnterCriticalSection(zBufferCS + idx);
 		if (zBuffer[idx] > pThreadParams->pP->data[2]) {
 			zBuffer[idx] = pThreadParams->pP->data[2];
-			if (zBuffer[idx] < 0 || zBuffer[idx] > 1) printf("%g", zBuffer[idx]);
+
 			int globalTextureIDX = (4096 * (int)(4096 - 4096 * pThreadParams->pPT->data[1]) + (int)(pThreadParams->pPT->data[0] * 4096));
 			int normalIDX = globalTextureIDX * 3;
 			int colorIDX = globalTextureIDX * 3;
@@ -922,63 +927,63 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 			
 			if (index < floorFaceIndex)
 			{
-				gsl_vector_memcpy(pThreadParams->pNormal, pThreadParams->pPN);
-				gsl_vector_memcpy(pThreadParams->pResult, pThreadParams->pTangent);
-				gsl_blas_ddot(pThreadParams->pResult, pThreadParams->pNormal, &temp);
-				gsl_vector_scale(pThreadParams->pPN, temp);
-				gsl_vector_sub(pThreadParams->pResult, pThreadParams->pPN);
-				gsl_vector_scale(pThreadParams->pTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pTangent));
-				vector_cross_product3(pThreadParams->pNormal, pThreadParams->pTangent, pThreadParams->pBTangent);
-				gsl_vector_scale(pThreadParams->pBTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pBTangent)); 
+				// gsl_vector_memcpy(pThreadParams->pNormal, pThreadParams->pPN);
+				// gsl_vector_memcpy(pThreadParams->pResult, pThreadParams->pTangent);
+				// gsl_blas_ddot(pThreadParams->pResult, pThreadParams->pNormal, &temp);
+				// gsl_vector_scale(pThreadParams->pPN, temp);
+				// gsl_vector_sub(pThreadParams->pResult, pThreadParams->pPN);
+				// gsl_vector_scale(pThreadParams->pTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pTangent));
+				// vector_cross_product3(pThreadParams->pNormal, pThreadParams->pTangent, pThreadParams->pBTangent);
+				// gsl_vector_scale(pThreadParams->pBTangent, 1.0 / gsl_blas_dnrm2(pThreadParams->pBTangent)); 
 				
-				gsl_vector_set(pThreadParams->pPN, 0, (double)normalsBuffer[normalIDX + 0]/255.0);
-				gsl_vector_set(pThreadParams->pPN, 1, (double)normalsBuffer[normalIDX + 1]/255.0);
-				gsl_vector_set(pThreadParams->pPN, 2, (double)normalsBuffer[normalIDX + 2]/255.0);
+				// gsl_vector_set(pThreadParams->pPN, 0, (double)normalsBuffer[normalIDX + 0]/255.0);
+				// gsl_vector_set(pThreadParams->pPN, 1, (double)normalsBuffer[normalIDX + 1]/255.0);
+				// gsl_vector_set(pThreadParams->pPN, 2, (double)normalsBuffer[normalIDX + 2]/255.0);
 
-				gsl_vector_scale(pThreadParams->pPN, 2.0);
-				gsl_vector_add_constant(pThreadParams->pPN, -1.0);
-				gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
+				// gsl_vector_scale(pThreadParams->pPN, 2.0);
+				// gsl_vector_add_constant(pThreadParams->pPN, -1.0);
+				// gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
 
-				gsl_vector* L = pThreadParams->L;
-				gsl_vector_memcpy(L, eye);
+				// gsl_vector* L = pThreadParams->L;
+				// gsl_vector_memcpy(L, eye);
 
-				gsl_blas_dgemv(CblasTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPN, 0, pThreadParams->pResult);
-				gsl_vector_memcpy(pThreadParams->pPN, pThreadParams->pResult);
-				gsl_vector_set(pThreadParams->pPN, 3, 0);
-				gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
-				// gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->L, 0, pThreadParams->pResult);
-				// gsl_vector_memcpy(pThreadParams->L, pThreadParams->pResult);
-				// gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPs, 0, pThreadParams->pResult);
-				// gsl_vector_memcpy(pThreadParams->pPs, pThreadParams->pResult);
+				// gsl_blas_dgemv(CblasTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPN, 0, pThreadParams->pResult);
+				// gsl_vector_memcpy(pThreadParams->pPN, pThreadParams->pResult);
+				// gsl_vector_set(pThreadParams->pPN, 3, 0);
+				// gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
+				// // gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->L, 0, pThreadParams->pResult);
+				// // gsl_vector_memcpy(pThreadParams->L, pThreadParams->pResult);
+				// // gsl_blas_dgemv(CblasNoTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPs, 0, pThreadParams->pResult);
+				// // gsl_vector_memcpy(pThreadParams->pPs, pThreadParams->pResult);
 
-				gsl_vector_sub(L, pThreadParams->pPs);
-				gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+				// gsl_vector_sub(L, pThreadParams->pPs);
+				// gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
-				gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
-				lambertian = max(lambertian, 0.0f);
+				// gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
+				// lambertian = max(lambertian, 0.0f);
 
-				if(lambertian > 0.0) {
-					gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
-					gsl_vector_sub(pThreadParams->pPN, L);
+				// if(lambertian > 0.0) {
+				// 	gsl_vector_scale(pThreadParams->pPN, 2 * lambertian);
+				// 	gsl_vector_sub(pThreadParams->pPN, L);
 					
-					gsl_blas_ddot(pThreadParams->pPN, L, &specular);
-					specular = pow(max(specular, 0.0f), shininessVal);
-				}
+				// 	gsl_blas_ddot(pThreadParams->pPN, L, &specular);
+				// 	specular = pow(max(specular, 0.0f), shininessVal);
+				// }
 			
-				// pBytes[offset + 0] = albedoBuffer[normalIDX + 2];
-				// pBytes[offset + 1] = albedoBuffer[normalIDX + 1]; 
-				// pBytes[offset + 2] = albedoBuffer[normalIDX + 0];  
-				// pBytes[offset + 0] = specularBuffer[normalIDX + 2];
-				// pBytes[offset + 1] = specularBuffer[normalIDX + 1]; 
-				// pBytes[offset + 2] = specularBuffer[normalIDX + 0];  
-				// pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 2]/255.0 + albedoBuffer[colorIDX + 2] * lambertian + 0.2 * specularBuffer[colorIDX + 2], 255);
-				// pBytes[offset + 1] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 1]/255.0 + albedoBuffer[colorIDX + 1] * lambertian + 0.2 * specularBuffer[colorIDX + 1], 255); 
-				// pBytes[offset + 2] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 0]/255.0 + albedoBuffer[colorIDX + 0] * lambertian + 0.2 * specularBuffer[colorIDX + 0], 255);  
-				pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] * lambertian + 255*specular, 255);
-				pBytes[offset + 1] = min(albedoBuffer[colorIDX + 1] * lambertian + 255*specular, 255); 
-				pBytes[offset + 2] = min(albedoBuffer[colorIDX + 0] * lambertian + 255*specular, 255);  
-				// pBytes[offset + 0] = min(, 255); 
-				// pBytes[offset + 1] = min(, 255);
+				// // pBytes[offset + 0] = albedoBuffer[normalIDX + 2];
+				// // pBytes[offset + 1] = albedoBuffer[normalIDX + 1]; 
+				// // pBytes[offset + 2] = albedoBuffer[normalIDX + 0];  
+				// // pBytes[offset + 0] = specularBuffer[normalIDX + 2];
+				// // pBytes[offset + 1] = specularBuffer[normalIDX + 1]; 
+				// // pBytes[offset + 2] = specularBuffer[normalIDX + 0];  
+				// // pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 2]/255.0 + albedoBuffer[colorIDX + 2] * lambertian + 0.2 * specularBuffer[colorIDX + 2], 255);
+				// // pBytes[offset + 1] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 1]/255.0 + albedoBuffer[colorIDX + 1] * lambertian + 0.2 * specularBuffer[colorIDX + 1], 255); 
+				// // pBytes[offset + 2] = min(albedoBuffer[colorIDX + 2] ambientBuffer[colorIDX + 0]/255.0 + albedoBuffer[colorIDX + 0] * lambertian + 0.2 * specularBuffer[colorIDX + 0], 255);  
+				// pBytes[offset + 0] = min(albedoBuffer[colorIDX + 2] * lambertian + 255*specular, 255);
+				// pBytes[offset + 1] = min(albedoBuffer[colorIDX + 1] * lambertian + 255*specular, 255); 
+				// pBytes[offset + 2] = min(albedoBuffer[colorIDX + 0] * lambertian + 255*specular, 255);  
+				// // pBytes[offset + 0] = min(, 255); 
+				// // pBytes[offset + 1] = min(, 255);
 				// pBytes[offset + 2] = min(, 255);   
 			} 
 			else
