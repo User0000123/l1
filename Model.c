@@ -24,8 +24,9 @@
 
 #define APPLICATION_NAME    _TEXT("3D Model")
 
+//"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj"
-#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\Bull_Lowpoly\\Bull_Lowpoly.obj"
+#define PTH_OBJ_FILE        "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\model.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj"
 // #define PTH_OBJ_FILE "D:\\msys64cppworkspace\\graphics_alex\\l1\\model.obj"
 // #define PTH_OBJ_FILE        "C:\\test.obj"
@@ -33,13 +34,13 @@
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj"
 //  #define PTH_OBJ_FILE        "./model.obj"
-#define PTH_AMBIENT_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_AO.jpg"
-#define PTH_ALBEDO_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_albedo.jpg"
-#define PTH_NORMALS_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_normal.png"
-#define PTH_SPECULAR_TEXTURE "C:\\Users\\Aleksej\\Downloads\\model\\textures\\M_Cat_Statue_roughness.jpg"
+#define PTH_AMBIENT_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_AO.jpg"
+#define PTH_ALBEDO_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_albedo.jpg"
+#define PTH_NORMALS_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_normal.png"
+#define PTH_SPECULAR_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_roughness.jpg"
 
-#define PTH_FLOOR_FILE		"C:\\Users\\Aleksej\\Downloads\\model\\floor.obj"
-#define PTH_FLOOR_TEXTURE 	"C:\\Users\\Aleksej\\Downloads\\model\\textures\\floor.jpg"
+#define PTH_FLOOR_FILE		"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\floor.obj"
+#define PTH_FLOOR_TEXTURE 	"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\floor.jpg"
 
 #define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
 //#define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
