@@ -567,7 +567,7 @@ void InitializeResources()
 
 	//#light
 	g_light_color = gsl_vector_alloc(3);
-	gsl_vector_set_all(g_light_color, 1);
+	gsl_vector_set_all(g_light_color, 0.8);
 
 	g_one = gsl_vector_alloc(3);
 	gsl_vector_set_all(g_one, 1.0);
@@ -1243,7 +1243,10 @@ void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n,
 	gsl_vector_scale(pThreadParams->G, 1 - metal);
 	gsl_vector_add(result, pThreadParams->G);
 	
-	//cross_product(result, radiance, result);
+	for (size_t i = 0; i < GGX_VEC_SIZE; i++)
+	{
+		gsl_vector_set(result, i, gsl_vector_get(result, i) * gsl_vector_get(radiance, i));
+	}
 
 	gsl_vector_scale(albedo, 0.05f * ambient);
 	gsl_vector_add(result, albedo);
