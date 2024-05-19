@@ -35,17 +35,28 @@
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj"
 //  #define PTH_OBJ_FILE        "./model.obj"
-#define PTH_AMBIENT_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_AO.jpg"
-#define PTH_ALBEDO_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_albedo.jpg"
-#define PTH_NORMALS_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_normal.png"
-#define PTH_SPECULAR_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_roughness.jpg"
-
 #define PTH_FLOOR_FILE		"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\floor.obj"
 #define PTH_FLOOR_TEXTURE 	"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\floor.jpg"
 
+#define PTH_ALBEDO_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_albedo.jpg"
+#define PTH_DIFFUSE_TEXTURE PTH_ALBEDO_TEXTURE
+/*An albedo map, also known as a diffuse map, represents the base color or reflectance of an object's surface. It defines the color and appearance of the object under diffuse lighting conditions.*/
+
+#define PTH_NORMALS_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_normal.png"
+/*map of normals*/
+
+#define PTH_METAL_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_metallic.jpg"
+
+#define PTH_SPECULAR_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_roughness.jpg" //<!-- not specular actually
+#define PTH_ROUGH_TEXTURE PTH_SPECULAR_TEXTURE
+
+#define PTH_AMBIENT_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_AO.jpg"
+#define PTH_AO_TEXTURE PTH_AMBIENT_TEXTURE
+/*an ambient map, also known as an ambient occlusion map, is used to simulate the occlusion, or shadowing, of ambient light in a scene. It enhances the perception of depth and realism by darkening areas where objects are close together or where light is blocked by nearby surfaces. */
+
 #define SWAP(a, b)          {typeof(a) temp = a; a = b; b = temp;}
 //#define SWAP_VECTORS(a, b)  {double temp[4]; memcpy(temp, ((gsl_vector *)a)->data, sizeof(double) * 4); gsl_vector_memcpy(a, b); memcpy(((gsl_vector *)b)->data, temp, sizeof(double) * 4);}
-#define COLOR_BCKGRD		RGB(0, 0, 0)
+#define COLOR_BCKGRD		RGB(255, 0, 0)
 #define COLOR_IMAGE         RGB(255, 255, 255)
 
 #define TIMER_REPAINT_ID 1
@@ -83,11 +94,13 @@ FILE *objFile;
 ObjFile *pObjFile;
 
 	/* Textures */
-byte *ambientBuffer;
+byte *floorBuffer;
 byte *albedoBuffer;
 byte *normalsBuffer;
-byte *specularBuffer;
-byte *floorBuffer;
+
+byte *metallicBuffer;
+byte *specularBuffer; byte *roughnessBuffer;
+byte *ambientBuffer;
 
 /* Model temp vertices */
 gsl_vector **gvWorldVertices;
@@ -119,6 +132,12 @@ double *zBuffer;
 CRITICAL_SECTION *zBufferCS;
 byte *pIsDrawable;
 
+/*length of 3 filled with 1*/
+gsl_vector* g_light_color;
+gsl_vector* g_one;
+gsl_vector* g_zero;
+gsl_vector* g_F0;
+
 /* Model transformation matrices */
 gsl_matrix *matrixTransformation;
 gsl_matrix matrixViewPort;
@@ -133,9 +152,10 @@ byte keys[255];
 
 /* Multithreading */
 #define N_QUEUE_MAX_SIZE 10000
-#define N_THREADS 16
+#define N_THREADS 1
 #define N_PARAMS 24
 HTHDPOOL hPool;
+#define GGX_VEC_SIZE 3
 typedef struct {
 	HDC dc;
 	int from;
@@ -178,6 +198,14 @@ typedef struct {
 	gsl_vector *pPN;
 	gsl_vector *L;
 
+	gsl_vector* G;//<!-- PartialGeometry, length<GGX_VEC_SIZE>
+	gsl_vector* D;//<!-- Distribution, length<GGX_VEC_SIZE>
+	gsl_vector* F;//<!-- FresnelSchlick, length<GGX_VEC_SIZE>
+	gsl_vector* h;//<!-- micro normal, length<GGX_VEC_SIZE>
+	gsl_vector* tmp1;//<!-- temporary storage, length<GGX_VEC_SIZE>
+	gsl_vector* radiance;
+	gsl_vector* albedo;
+	gsl_vector* F0;
 } PARAMS;
 PARAMS params[N_PARAMS]; // <- There can be any size you want
 HANDLE hTaskExecutedEvent;
@@ -468,8 +496,8 @@ void InitializeResources()
   // hPool = CreateThreadPool(N_QUEUE_MAX_SIZE, N_THREADS);
   // hTaskExecutedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
   pThreadPool = CreateThreadpool(NULL);
-  SetThreadpoolThreadMaximum(pThreadPool, 500);
-  SetThreadpoolThreadMinimum(pThreadPool, N_THREADS);
+  SetThreadpoolThreadMaximum(pThreadPool, 1);
+  SetThreadpoolThreadMinimum(pThreadPool, 1);
   InitializeThreadpoolEnvironment(&tpCBEnvironment);
   tpCUGroup = CreateThreadpoolCleanupGroup();
   SetThreadpoolCallbackCleanupGroup(&tpCBEnvironment, tpCUGroup, NULL);
@@ -514,13 +542,48 @@ void InitializeResources()
 		params[i].pE2 = gsl_vector_alloc(4);
 		params[i].pUV1 = gsl_vector_alloc(4);
 		params[i].pUV2 = gsl_vector_alloc(4);
+
+		params[i].G 		= gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].D 		= gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].F 		= gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].h 		= gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].tmp1 	= gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].radiance = gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].albedo = gsl_vector_alloc(GGX_VEC_SIZE);
+		params[i].F0 				= gsl_vector_alloc(GGX_VEC_SIZE);
 	}
 
 	LoadJpg(PTH_ALBEDO_TEXTURE, &albedoBuffer);
 	LoadPng(PTH_NORMALS_TEXTURE, &normalsBuffer);
+
+	LoadJpg(PTH_METAL_TEXTURE, &metallicBuffer);
+
+	LoadJpg(PTH_ROUGH_TEXTURE, &roughnessBuffer);
+	specularBuffer = roughnessBuffer;
+
 	LoadJpg(PTH_AMBIENT_TEXTURE, &ambientBuffer);
-	LoadJpg(PTH_SPECULAR_TEXTURE, &specularBuffer);
+
 	hbrBackground = CreateSolidBrush(COLOR_BCKGRD);
+
+	//#light
+	g_light_color = gsl_vector_alloc(3);
+	gsl_vector_set_all(g_light_color, 1);
+
+	g_one = gsl_vector_alloc(3);
+	gsl_vector_set_all(g_one, 1.0);
+
+	g_zero = gsl_vector_alloc(3);
+	gsl_vector_set_all(g_zero, 0.0);
+
+	g_F0 = gsl_vector_alloc(3);
+	
+	//gsl_vector_set_all(g_F0, 0.72);
+
+	// gsl_vector_set(g_F0, 0, 1.0);
+	// gsl_vector_set(g_F0, 1, 0.0);
+	// gsl_vector_set(g_F0, 2, 0.0);
+
+	gsl_vector_set_all(g_F0, 0.04);
 }
 
 void FreeAllResources()
@@ -951,11 +1014,73 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 
 				gsl_blas_dgemv(CblasTrans, 1.0, pThreadParams->pTBN, pThreadParams->pPN, 0, pThreadParams->pResult);
 				gsl_vector_memcpy(pThreadParams->pPN, pThreadParams->pResult);
-				// gsl_vector_set(pThreadParams->pPN, 3, 0);
-				gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
+				gsl_vector_set(pThreadParams->pPN, 3, 0);
+				//gsl_vector_scale(pThreadParams->pPN, 1.0 / gsl_blas_dnrm2(pThreadParams->pPN));
 
 				gsl_vector_sub(L, pThreadParams->pPs);
-				gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+				//gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
+
+				gsl_vector_view n = gsl_vector_subvector(pThreadParams->pPN, 0, 3);
+				gsl_vector_view l = gsl_vector_subvector(L, 0, 3);
+				gsl_vector* col = pThreadParams->tmp1;
+
+				gsl_vector* albedo = pThreadParams->albedo;
+				double l1 = albedoBuffer[colorIDX + 0];
+				double l2 = albedoBuffer[colorIDX + 1];
+				double l3 = albedoBuffer[colorIDX + 2];
+				gsl_vector_set(albedo, 0, l3 / 255.0);
+				gsl_vector_set(albedo, 1, l2 / 255.0);
+				gsl_vector_set(albedo, 2, l1 / 255.0);
+
+				
+				for (size_t i = 0; i < 3; ++i) {
+						double y1 = gsl_vector_get(g_F0, i);
+						double y2 = gsl_vector_get(albedo, i);
+						double interpolated_value = y1 + metallicBuffer[colorIDX] * (y2 - y1);
+						gsl_vector_set(pThreadParams->F0, i, interpolated_value);
+				}
+
+				_CookTorrance_GGX(col, pThreadParams, &n.vector, &l.vector, &l.vector, pThreadParams->F0, albedo, 
+															roughnessBuffer[colorIDX] / 255.0, metallicBuffer[colorIDX] / 255.0, ambientBuffer[colorIDX] / 255.0);
+
+				double c1 = gsl_vector_get(col, 0);
+				double c2 = gsl_vector_get(col, 1);
+				double c3 = gsl_vector_get(col, 2);
+				//#tag
+				double coof = 5;
+				pBytes[offset + 0] = min(max(c3, 0)*255*coof, 255);
+				pBytes[offset + 1] = min(max(c2, 0)*255*coof, 255); 
+				pBytes[offset + 2] = min(max(c1, 0)*255*coof, 255);  
+
+#ifdef N
+				gsl_vector* color = gsl_vector_alloc(3);
+				gsl_vector* F0 = gsl_vector_alloc(3);
+				gsl_vector_set_all(color, 200);
+
+				gsl_vector* material = gsl_vector_alloc(3);
+				gsl_vector_set(material, 0, metallicBuffer[colorIDX]);
+				gsl_vector_set(material, 1, roughnessBuffer[colorIDX]);
+				gsl_vector_set(material, 2, ambientBuffer[colorIDX]);
+				gsl_vector* albedo = gsl_vector_alloc(3);
+				gsl_vector_set(albedo, 0, min(albedoBuffer[colorIDX + 2], 255));
+				gsl_vector_set(albedo, 1, min(albedoBuffer[colorIDX + 1], 255));
+				gsl_vector_set(albedo, 2, min(albedoBuffer[colorIDX + 0], 255));
+
+
+				// Perform linear interpolation
+				for (size_t i = 0; i < 3; i++) {
+						double start_val = 0.04f;
+						double end_val = gsl_vector_get(albedo, i);
+						double interpolated_val = start_val + metallicBuffer[colorIDX] * (end_val - start_val);
+						gsl_vector_set(F0, i, interpolated_val);
+				}
+
+				gsl_vector* result = CookTorrance_GGX(pThreadParams->pPN, L, L, albedo, material, F0, color);
+				gsl_vector_free(material);
+				gsl_vector_free(albedo);
+				gsl_vector_free(color);
+				gsl_vector_free(F0);
+				/*phong
 
 				gsl_blas_ddot(pThreadParams->pPN, L, &lambertian);
 				lambertian = max(lambertian, 0.0f);
@@ -988,7 +1113,17 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				// pBytes[offset + 2] = min(((lambertian * 255) + 24 + (specular * 255)), 255);
 				// pBytes[offset + 0] = min(, 255); 
 				// pBytes[offset + 1] = min(, 255);
-				// pBytes[offset + 2] = min(, 255);   
+				// pBytes[offset + 2] = min(, 255);
+
+
+				*/
+				
+				pBytes[offset + 0] = min(gsl_vector_get(result, 0), 255);
+				pBytes[offset + 1] = min(gsl_vector_get(result, 1), 255); 
+				pBytes[offset + 2] = min(gsl_vector_get(result, 2), 255);  
+				gsl_vector_free(result);
+#endif
+
 			} 
 			// else
 			// {
@@ -1001,6 +1136,121 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 	}
 
 	}
+}
+
+double _PartialGeometry(double cosThetaN, double alpha)
+{
+		double cosTheta_sqr = cosThetaN*cosThetaN;
+    double tan2 = ( 1 - cosTheta_sqr ) / cosTheta_sqr;
+    double GP = 2 / ( 1 + sqrt( 1 + alpha * alpha * tan2 ) );
+    return GP;
+}
+
+double _Distribution(double cosThetaNH, double alpha)
+{
+ 		double alpha2 = alpha * alpha;
+    double NH_sqr = cosThetaNH * cosThetaNH;
+    double den = NH_sqr * alpha2 + (1.0 - NH_sqr);
+    return alpha2 / (M_PI * den * den );
+}
+
+/**
+ * @brief Fully rewrite @paramref result vector 
+ * 
+ * @param result allocated with length<3>, noninit, PARAMS.F
+ * @param F0 freshel cooficient
+ * @param cosTheta cos of angle between h and l
+ */
+void _FresnelSchlick(gsl_vector* result, gsl_vector* F0, double cosTheta) {
+
+	gsl_vector_memcpy(result, g_one);
+	gsl_vector_sub(result, F0);
+	if (cosTheta >= 1.0)
+		gsl_vector_scale(result, 0);
+	else gsl_vector_scale(result, pow(1.0 - cosTheta, 5.0));
+	gsl_vector_add(result, F0);
+}
+
+void cross_product(const gsl_vector *u, const gsl_vector *v, gsl_vector *product)
+{
+        double p1 = gsl_vector_get(u, 1)*gsl_vector_get(v, 2)
+                - gsl_vector_get(u, 2)*gsl_vector_get(v, 1);
+
+        double p2 = gsl_vector_get(u, 2)*gsl_vector_get(v, 0)
+                - gsl_vector_get(u, 0)*gsl_vector_get(v, 2);
+
+        double p3 = gsl_vector_get(u, 0)*gsl_vector_get(v, 1)
+                - gsl_vector_get(u, 1)*gsl_vector_get(v, 0);
+
+        gsl_vector_set(product, 0, p1);
+        gsl_vector_set(product, 1, p2);
+        gsl_vector_set(product, 2, p3);
+}
+
+void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n, gsl_vector* l, gsl_vector* v, gsl_vector* F0, 
+		gsl_vector* albedo, double roughness, double metal, double ambient) {
+
+	gsl_vector* h = pThreadParams->h;
+
+	gsl_vector_scale(n, 1.0 / gsl_blas_dnrm2(n));
+	gsl_vector_scale(l, 1.0 / gsl_blas_dnrm2(l));//<!-- l = v so normalize v too
+	
+	gsl_vector_memcpy(h, v);
+	//gsl_vector_add(h, l);
+	//gsl_vector_scale(h, 1.0 / gsl_blas_dnrm2(h));
+	
+	//precompute dots
+	double NL;
+	gsl_blas_ddot(n, l, &NL);
+  if (NL <= 0.0) {
+		gsl_vector_memcpy(result, g_zero);
+		return;
+	}
+	double NV;
+	gsl_blas_ddot(n, v, &NV);
+	if (NV <= 0.0) {
+		gsl_vector_memcpy(result, g_zero);
+		return;
+	}
+	double NH;
+	gsl_blas_ddot(n, h, &NH);
+	double HV = 1;
+	//gsl_blas_ddot(h, v, &HV);
+
+	double distance = gsl_blas_dnrm2(l);
+  double attenuation = 1 / (distance * distance);
+	gsl_vector* radiance = pThreadParams->radiance;
+	gsl_vector_memcpy(radiance, g_light_color);
+  gsl_vector_scale(radiance, attenuation);
+	//gsl_vector_scale(radiance, NL);
+
+ 	//precompute roughness square
+  double roug_sqr = pow(roughness, 2);
+	double G = _PartialGeometry(NV, roug_sqr) * _PartialGeometry(NL, roug_sqr);
+	double D = _Distribution(NH, roug_sqr);
+	gsl_vector* F = pThreadParams->F;
+	_FresnelSchlick(F, F0, HV);
+
+	gsl_vector_memcpy(result, F);
+	gsl_vector_scale(result, G*D*0.25/NV);
+	
+	gsl_vector* diffK = pThreadParams->D;
+	gsl_vector_memcpy(diffK, g_one);
+	gsl_vector_sub(diffK, F);
+
+	cross_product(diffK, albedo, pThreadParams->G);
+	gsl_vector_scale(pThreadParams->G, NL / M_PI);
+	gsl_vector_scale(pThreadParams->G, 1 - metal);
+	gsl_vector_add(result, pThreadParams->G);
+	
+	cross_product(result, radiance, result);
+
+	gsl_vector_scale(albedo, 0.05f * ambient);
+	gsl_vector_add(result, albedo);
+
+	if (gsl_vector_get(result, 0) < 0) gsl_vector_set(result, 0, 0.0);
+	if (gsl_vector_get(result, 1) < 0) gsl_vector_set(result, 1, 0.0);
+	if (gsl_vector_get(result, 2) < 0) gsl_vector_set(result, 2, 0.0);
 }
 
 void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
