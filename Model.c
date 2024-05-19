@@ -1028,9 +1028,9 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				double l1 = albedoBuffer[colorIDX + 0];
 				double l2 = albedoBuffer[colorIDX + 1];
 				double l3 = albedoBuffer[colorIDX + 2];
-				gsl_vector_set(albedo, 0, l3 / 255.0);
+				gsl_vector_set(albedo, 0, l1 / 255.0);
 				gsl_vector_set(albedo, 1, l2 / 255.0);
-				gsl_vector_set(albedo, 2, l1 / 255.0);
+				gsl_vector_set(albedo, 2, l3 / 255.0);
 
 				
 				for (size_t i = 0; i < 3; ++i) {
@@ -1047,7 +1047,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				double c2 = gsl_vector_get(col, 1);
 				double c3 = gsl_vector_get(col, 2);
 				//#tag
-				double coof = 5;
+				double coof = 1;
 				pBytes[offset + 0] = min(max(c3, 0)*255*coof, 255);
 				pBytes[offset + 1] = min(max(c2, 0)*255*coof, 255); 
 				pBytes[offset + 2] = min(max(c1, 0)*255*coof, 255);  
@@ -1243,7 +1243,7 @@ void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n,
 	gsl_vector_scale(pThreadParams->G, 1 - metal);
 	gsl_vector_add(result, pThreadParams->G);
 	
-	cross_product(result, radiance, result);
+	//cross_product(result, radiance, result);
 
 	gsl_vector_scale(albedo, 0.05f * ambient);
 	gsl_vector_add(result, albedo);
