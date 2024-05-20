@@ -152,7 +152,7 @@ byte keys[255];
 
 /* Multithreading */
 #define N_QUEUE_MAX_SIZE 10000
-#define N_THREADS 1
+#define N_THREADS 16
 #define N_PARAMS 24
 HTHDPOOL hPool;
 #define GGX_VEC_SIZE 3
@@ -496,7 +496,7 @@ void InitializeResources()
   // hPool = CreateThreadPool(N_QUEUE_MAX_SIZE, N_THREADS);
   // hTaskExecutedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
   pThreadPool = CreateThreadpool(NULL);
-  SetThreadpoolThreadMaximum(pThreadPool, 1);
+  SetThreadpoolThreadMaximum(pThreadPool, N_THREADS);
   SetThreadpoolThreadMinimum(pThreadPool, 1);
   InitializeThreadpoolEnvironment(&tpCBEnvironment);
   tpCUGroup = CreateThreadpoolCleanupGroup();
@@ -567,7 +567,10 @@ void InitializeResources()
 
 	//#light
 	g_light_color = gsl_vector_alloc(3);
-	gsl_vector_set_all(g_light_color, 0.8);
+	gsl_vector_set_all(g_light_color, 30);
+	// gsl_vector_set(g_light_color, 0, 1.0);
+	// gsl_vector_set(g_light_color, 1, 0.84);
+	// gsl_vector_set(g_light_color, 2, 0.0);
 
 	g_one = gsl_vector_alloc(3);
 	gsl_vector_set_all(g_one, 1.0);
@@ -577,7 +580,7 @@ void InitializeResources()
 
 	g_F0 = gsl_vector_alloc(3);
 	
-	//gsl_vector_set_all(g_F0, 0.72);
+	//gsl_vector_set_all(g_F0, 0.733);
 
 	// gsl_vector_set(g_F0, 0, 1.0);
 	// gsl_vector_set(g_F0, 1, 0.0);
@@ -1020,6 +1023,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				gsl_vector_sub(L, pThreadParams->pPs);
 				//gsl_vector_scale(L, 1.0 / gsl_blas_dnrm2(L));
 
+				//gsl_vector_memcpy(pThreadParams->pPN, normalsBuffer[normalIDX]);
 				gsl_vector_view n = gsl_vector_subvector(pThreadParams->pPN, 0, 3);
 				gsl_vector_view l = gsl_vector_subvector(L, 0, 3);
 				gsl_vector* col = pThreadParams->tmp1;
@@ -1028,29 +1032,32 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 				double l1 = albedoBuffer[colorIDX + 0];
 				double l2 = albedoBuffer[colorIDX + 1];
 				double l3 = albedoBuffer[colorIDX + 2];
-				gsl_vector_set(albedo, 0, l1 / 255.0);
-				gsl_vector_set(albedo, 1, l2 / 255.0);
-				gsl_vector_set(albedo, 2, l3 / 255.0);
-
 				
 				for (size_t i = 0; i < 3; ++i) {
 						double y1 = gsl_vector_get(g_F0, i);
 						double y2 = gsl_vector_get(albedo, i);
-						double interpolated_value = y1 + metallicBuffer[colorIDX] * (y2 - y1);
+						double interpolated_value = y1 + metallicBuffer[colorIDX] / 255.0 * (y2 - y1);
 						gsl_vector_set(pThreadParams->F0, i, interpolated_value);
 				}
 
+				const double kk = 2.2;
+				for (size_t i = 0; i < 3; i++)
+				{
+					gsl_vector_set(albedo, i, pow(albedoBuffer[colorIDX + i] / 255.0, kk));
+				}
+
+				//#tag
 				_CookTorrance_GGX(col, pThreadParams, &n.vector, &l.vector, &l.vector, pThreadParams->F0, albedo, 
-															roughnessBuffer[colorIDX] / 255.0, metallicBuffer[colorIDX] / 255.0, ambientBuffer[colorIDX] / 255.0);
+													pow(roughnessBuffer[colorIDX] / 255.0, 1), pow(metallicBuffer[colorIDX] / 255.0, 1), pow(ambientBuffer[colorIDX] / 255.0, kk));
 
 				double c1 = gsl_vector_get(col, 0);
 				double c2 = gsl_vector_get(col, 1);
 				double c3 = gsl_vector_get(col, 2);
-				//#tag
-				double coof = 1;
-				pBytes[offset + 0] = min(max(c3, 0)*255*coof, 255);
-				pBytes[offset + 1] = min(max(c2, 0)*255*coof, 255); 
-				pBytes[offset + 2] = min(max(c1, 0)*255*coof, 255);  
+				//#color
+				double col_mult = 255.0;
+				pBytes[offset + 0] = min(pow(c3, 1 / kk) * col_mult, 255);
+				pBytes[offset + 1] = min(pow(c2, 1 / kk) * col_mult, 255); 
+				pBytes[offset + 2] = min(pow(c1, 1 / kk) * col_mult, 255);  
 
 #ifdef N
 				gsl_vector* color = gsl_vector_alloc(3);
@@ -1140,17 +1147,19 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 
 double _PartialGeometry(double cosThetaN, double alpha)
 {
-		double cosTheta_sqr = cosThetaN*cosThetaN;
-    double tan2 = ( 1 - cosTheta_sqr ) / cosTheta_sqr;
-    double GP = 2 / ( 1 + sqrt( 1 + alpha * alpha * tan2 ) );
-    return GP;
+		// double cosTheta_sqr = cosThetaN*cosThetaN;
+    // double tan2 = ( 1 - cosTheta_sqr ) / cosTheta_sqr;
+    // double GP = 2 / ( 1 + sqrt( 1 + alpha * alpha * tan2 ) );
+    // return GP;
+		double k = alpha /2 ;
+		return cosThetaN / (cosThetaN * (1 - k) + k);
 }
 
 double _Distribution(double cosThetaNH, double alpha)
 {
  		double alpha2 = alpha * alpha;
     double NH_sqr = cosThetaNH * cosThetaNH;
-    double den = NH_sqr * alpha2 + (1.0 - NH_sqr);
+    double den = NH_sqr * (alpha2 - 1.0) + 1.0;
     return alpha2 / (M_PI * den * den );
 }
 
@@ -1167,29 +1176,19 @@ void _FresnelSchlick(gsl_vector* result, gsl_vector* F0, double cosTheta) {
 	gsl_vector_sub(result, F0);
 	if (cosTheta >= 1.0)
 		gsl_vector_scale(result, 0);
-	else gsl_vector_scale(result, pow(1.0 - cosTheta, 5.0));
+	gsl_vector_scale(result, pow(1.0 - cosTheta, 5.0));
 	gsl_vector_add(result, F0);
-}
-
-void cross_product(const gsl_vector *u, const gsl_vector *v, gsl_vector *product)
-{
-        double p1 = gsl_vector_get(u, 1)*gsl_vector_get(v, 2)
-                - gsl_vector_get(u, 2)*gsl_vector_get(v, 1);
-
-        double p2 = gsl_vector_get(u, 2)*gsl_vector_get(v, 0)
-                - gsl_vector_get(u, 0)*gsl_vector_get(v, 2);
-
-        double p3 = gsl_vector_get(u, 0)*gsl_vector_get(v, 1)
-                - gsl_vector_get(u, 1)*gsl_vector_get(v, 0);
-
-        gsl_vector_set(product, 0, p1);
-        gsl_vector_set(product, 1, p2);
-        gsl_vector_set(product, 2, p3);
 }
 
 void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n, gsl_vector* l, gsl_vector* v, gsl_vector* F0, 
 		gsl_vector* albedo, double roughness, double metal, double ambient) {
 
+	double distance = gsl_blas_dnrm2(l);
+  double attenuation = 1 / (distance * distance);
+	gsl_vector* radiance = pThreadParams->radiance;
+	gsl_vector_memcpy(radiance, g_light_color);
+  gsl_vector_scale(radiance, attenuation);
+	
 	gsl_vector* h = pThreadParams->h;
 
 	gsl_vector_scale(n, 1.0 / gsl_blas_dnrm2(n));
@@ -1206,23 +1205,22 @@ void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n,
 		gsl_vector_memcpy(result, g_zero);
 		return;
 	}
+
 	double NV;
 	gsl_blas_ddot(n, v, &NV);
 	if (NV <= 0.0) {
 		gsl_vector_memcpy(result, g_zero);
 		return;
 	}
+
 	double NH;
 	gsl_blas_ddot(n, h, &NH);
-	double HV = 1;
-	//gsl_blas_ddot(h, v, &HV);
+	NH = max(NH, 0.0);
 
-	double distance = gsl_blas_dnrm2(l);
-  double attenuation = 1 / (distance * distance);
-	gsl_vector* radiance = pThreadParams->radiance;
-	gsl_vector_memcpy(radiance, g_light_color);
-  gsl_vector_scale(radiance, attenuation);
-	//gsl_vector_scale(radiance, NL);
+	double HV;
+	gsl_blas_ddot(h, v, &HV);
+	//HV = max(HV, 0.0);
+	HV = 1.0;
 
  	//precompute roughness square
   double roug_sqr = pow(roughness, 2);
@@ -1238,7 +1236,10 @@ void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n,
 	gsl_vector_memcpy(diffK, g_one);
 	gsl_vector_sub(diffK, F);
 
-	cross_product(diffK, albedo, pThreadParams->G);
+	for (size_t i = 0; i < GGX_VEC_SIZE; i++)
+	{
+		gsl_vector_set(pThreadParams->G, i, gsl_vector_get(diffK, i) * gsl_vector_get(albedo, i));
+	}
 	gsl_vector_scale(pThreadParams->G, NL / M_PI);
 	gsl_vector_scale(pThreadParams->G, 1 - metal);
 	gsl_vector_add(result, pThreadParams->G);
@@ -1251,9 +1252,14 @@ void _CookTorrance_GGX(gsl_vector* result, PARAMS *pThreadParams, gsl_vector* n,
 	gsl_vector_scale(albedo, 0.05f * ambient);
 	gsl_vector_add(result, albedo);
 
-	if (gsl_vector_get(result, 0) < 0) gsl_vector_set(result, 0, 0.0);
-	if (gsl_vector_get(result, 1) < 0) gsl_vector_set(result, 1, 0.0);
-	if (gsl_vector_get(result, 2) < 0) gsl_vector_set(result, 2, 0.0);
+	for (size_t i = 0; i < 3; i++)
+	{
+		if (gsl_vector_get(result, i) < 0) {
+
+			gsl_vector_memcpy(result, g_zero);
+			return;
+		}
+	}
 }
 
 void CALLBACK task(PTP_CALLBACK_INSTANCE Instance, PVOID params, PTP_WORK Work)
