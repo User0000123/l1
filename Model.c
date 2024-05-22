@@ -28,29 +28,29 @@
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model2.obj"
 
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\Bull_Lowpoly\\Bull_Lowpoly.obj"
-#define PTH_OBJ_FILE        "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\model.obj"
+#define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\model\\model.obj"
 // #define PTH_OBJ_FILE "D:\\msys64cppworkspace\\graphics_alex\\l1\\model.obj"
 // #define PTH_OBJ_FILE        "C:\\test.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\the-billiards-room\\source\\{E92F06F9-2FE5-440C-80A3-14D7B6C23206}\\model.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\capybara(1)\\capybara.obj"
 // #define PTH_OBJ_FILE        "C:\\Users\\Aleksej\\Downloads\\carpincho-capybara-vrchat-avatar\\source\\Carpincho\\Carpincho.obj"
 //  #define PTH_OBJ_FILE        "./model.obj"
-#define PTH_FLOOR_FILE		"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\floor.obj"
-#define PTH_FLOOR_TEXTURE 	"D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\floor.jpg"
+#define PTH_FLOOR_FILE		"C:\\Users\\Aleksej\\Downloads\\model\\floor.obj"
+#define PTH_FLOOR_TEXTURE 	"C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\textures\\floor.jpg"
 
-#define PTH_ALBEDO_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_albedo.jpg"
+#define PTH_ALBEDO_TEXTURE "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\textures\\M_Cat_Statue_albedo.jpg"
 #define PTH_DIFFUSE_TEXTURE PTH_ALBEDO_TEXTURE
 /*An albedo map, also known as a diffuse map, represents the base color or reflectance of an object's surface. It defines the color and appearance of the object under diffuse lighting conditions.*/
 
-#define PTH_NORMALS_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_normal.png"
+#define PTH_NORMALS_TEXTURE "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\textures\\M_Cat_Statue_normal.png"
 /*map of normals*/
 
-#define PTH_METAL_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_metallic.jpg"
+#define PTH_METAL_TEXTURE "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\textures\\M_Cat_Statue_metallic.jpg"
 
-#define PTH_SPECULAR_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_roughness.jpg" //<!-- not specular actually
+#define PTH_SPECULAR_TEXTURE "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\textures\\M_Cat_Statue_roughness.jpg" //<!-- not specular actually
 #define PTH_ROUGH_TEXTURE PTH_SPECULAR_TEXTURE
 
-#define PTH_AMBIENT_TEXTURE "D:\\msys64cppworkspace\\graphics_alex\\lol\\l1\\model\\textures\\M_Cat_Statue_AO.jpg"
+#define PTH_AMBIENT_TEXTURE "C:\\Users\\Aleksej\\Desktop\\labs\\ACG\\l1\\textures\\M_Cat_Statue_AO.jpg"
 #define PTH_AO_TEXTURE PTH_AMBIENT_TEXTURE
 /*an ambient map, also known as an ambient occlusion map, is used to simulate the occlusion, or shadowing, of ambient light in a scene. It enhances the perception of depth and realism by darkening areas where objects are close together or where light is blocked by nearby surfaces. */
 
@@ -986,7 +986,7 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 			int normalIDX = globalTextureIDX * 3;
 			int colorIDX = globalTextureIDX * 3;
 			double lambertian = 0.0;
-			double shininessVal = 20;
+			double shininessVal = 50;
 			double specular = 0.0;
 			double temp = 0;
 			
