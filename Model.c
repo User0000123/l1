@@ -144,6 +144,7 @@ byte keys[255];
 /* Multithreading */
 #define N_QUEUE_MAX_SIZE 10000
 #define N_THREADS 16
+#define N_THREADS 16
 #define N_PARAMS 24
 HTHDPOOL hPool;
 #define GGX_VEC_SIZE 3
