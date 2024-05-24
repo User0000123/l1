@@ -135,6 +135,23 @@ gsl_matrix matrixViewPort;
 gsl_matrix matrixProjection;
 gsl_matrix matrixView;
 
+/* ACES INPUT */
+gsl_matrix ACESInputMatMx;
+gsl_matrix ACESOutputMatMx;
+double ACESInputMat[] =
+{
+    0.59719, 0.35458, 0.04823,
+    0.07600, 0.90834, 0.01566,
+    0.02840, 0.13383, 0.83777
+};
+double ACESOutputMat[] =
+{
+     1.60475, -0.53108, -0.07367,
+    -0.10208,  1.10813, -0.00605,
+    -0.00327, -0.07276,  1.07602
+};
+
+
 /* Just a temp value for single-threaded computing */
 gsl_vector *pResult;
 
@@ -402,6 +419,10 @@ void InitializeResources()
   matrixView = gsl_matrix_view_array(translView, 4, 4).matrix;
   matrixTransformation = gsl_matrix_alloc(4, 4);
 
+  /*ACES */
+  ACESInputMatMx = gsl_matrix_view_array(ACESInputMat, 3, 3).matrix;
+  ACESOutputMatMx = gsl_matrix_view_array(ACESOutputMat, 3, 3).matrix;
+
   pResult = gsl_vector_calloc(4);
   xAxis = gsl_vector_calloc(4);
   yAxis = gsl_vector_calloc(4);
@@ -555,10 +576,10 @@ void InitializeResources()
 
 	//#light
 	g_light_color = gsl_vector_alloc(3);
-	gsl_vector_set_all(g_light_color, 30);
+	gsl_vector_set_all(g_light_color, 1);
 
 	g_one = gsl_vector_alloc(3);
-	gsl_vector_set_all(g_one, 1.0);
+	gsl_vector_set_all(g_one, 1);
 
 	g_zero = gsl_vector_alloc(3);
 	gsl_vector_set_all(g_zero, 0.0);
@@ -684,6 +705,17 @@ double _Distribution(double cosThetaNH, double alpha)
     double NH_sqr = cosThetaNH * cosThetaNH;
     double den = NH_sqr * (alpha2 - 1.0) + 1.0;
     return alpha2 / (M_PI * den * den );
+}
+
+void RRTAndODTFit(gsl_vector* result, gsl_vector* v)
+{
+	gsl_vector_set_zero(result);
+	gsl_vector_memcpy(result, v);
+	gsl_vector_add_constant(result, 0.0245786f);
+	for (int i = 0; i < 3; i++) {
+		double v_value = gsl_vector_get(v, i);
+		gsl_vector_set(result, i, ((v_value * gsl_vector_get(result, i)) - 0.000090537f) / (v_value * (0.983729f * v_value + 0.4329510f) + 0.238081f));
+	}
 }
 
 /**
@@ -1143,10 +1175,16 @@ void DrawTriangleIl(PARAMS *pThreadParams, int index)
 					_CookTorrance_GGX(col, pThreadParams, &n.vector, &l.vector, &l.vector, pThreadParams->F0, albedo, 
 														roughnessBuffer[colorIDX] / 255.0, metallicBuffer[colorIDX] / 255.0, pow(ambientBuffer[colorIDX] / 255.0, GAMMA));
 					
+					// double c1 = 1.0 - exp(-gsl_vector_get(col, 0) * exposure);
+					// double c2 = 1.0 - exp(-gsl_vector_get(col, 1) * exposure);
+					// double c3 = 1.0 - exp(-gsl_vector_get(col, 2) * exposure);		
+					gsl_blas_dgemv(CblasNoTrans, 1.0, &ACESInputMatMx, col, 0, pThreadParams->D);
+					RRTAndODTFit(pThreadParams->G, pThreadParams->D);
+					gsl_blas_dgemv(CblasNoTrans, 1.0, &ACESOutputMatMx, pThreadParams->G, 0, col);
 					double c1 = 1.0 - exp(-gsl_vector_get(col, 0) * exposure);
 					double c2 = 1.0 - exp(-gsl_vector_get(col, 1) * exposure);
 					double c3 = 1.0 - exp(-gsl_vector_get(col, 2) * exposure);
-					
+
 					//#color with gamma correction
 					pBytes[offset + 0] = min(pow(c3, 1 / GAMMA) * 255, 255);
 					pBytes[offset + 1] = min(pow(c2, 1 / GAMMA) * 255, 255); 
